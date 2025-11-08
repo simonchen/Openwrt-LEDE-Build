@@ -1,6 +1,8 @@
-基于Openwrt/LEDE编译的 Newifi D1 固件
+基于Openwrt/LEDE编译的 Newifi D1 / C-LIFE-XG1 固件
 
 [Newifi-Lede 定制固件讨论](https://t.me/newifi_lede)
+
+<img width="450" height="225" alt="image" src="https://github.com/user-attachments/assets/5237b494-05bd-461c-99d3-5c8c2fcf47d8" />
 
 # Compile in Virtual Machine
 if you take 8 more threads (e.g, make -j8 V=s) to compile whole project, please make sure that you have sufficient memory assigned in virtual machine.
@@ -12,6 +14,9 @@ packages/helloword have been updated
 
 # What's New
 ```
+主题
+Argon morden theme
+
 系统
 Diskman,文件传输
 Kcptun客户端，Udp2raw，FRP内网穿透客户端, SmartDNS
@@ -36,6 +41,8 @@ iPerf3, Socat, turbo ACC 网络加速, 多线多拨, NWAN3负载均衡
 p910nd
 
 集成驱动
+MT7621 HNAT 硬件加速
+MT7621 eip93 硬件加密
 USB-RNDIS 驱动
 
 Rtw88-usb 无线网卡驱动
