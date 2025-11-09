@@ -15,7 +15,7 @@ packages/helloword have been updated
 # What's New
 ```
 主题
-Argon morden theme
+Argon modern theme
 
 系统
 Diskman,文件传输
