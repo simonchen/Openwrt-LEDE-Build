@@ -4,6 +4,17 @@
 
 <img width="450" height="225" alt="image" src="https://github.com/user-attachments/assets/5237b494-05bd-461c-99d3-5c8c2fcf47d8" />
 
+# C-Life-XG1 performance 
+Shell script to make CPU cores balance on MT7915 & br-lan / Wireless interface "wlan1-1" RPS
+```
+for irq in $(grep -E "mt|ra" /proc/interrupts | cut -d: -f1 | sed 's, *,,') do echo 8 > "/proc/irq/$irq/smp_affinity" done
+
+echo "f" > "/sys/class/net/wlan1-1/queues/rx-0/rps_cpus"
+
+echo "f" > /sys/class/net/br-lan/queues/rx-0/rps_cpus
+```
+<img width="540" height="369" alt="image" src="https://github.com/user-attachments/assets/a716d568-a354-48e4-8e9b-94502aac5ce8" />
+
 # Compile in Virtual Machine
 if you take 8 more threads (e.g, make -j8 V=s) to compile whole project, please make sure that you have sufficient memory assigned in virtual machine.
 4GB is lowest, 8GB more is perfectable that won't have unexpected failures.
