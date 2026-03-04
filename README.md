@@ -6,6 +6,8 @@
 
 # C-Life-XG1 performance 
 Shell script to make CPU cores balance on MT7915 & br-lan / Wireless interface "wlan1-1" RPS
+'f' value would be too sensitive to conusme the CPU usage and causing Hight SoftIrqs usage furthermore dead-locks after soon,
+Rotating 'd'(1110) or 'e' (1101) may helps to improve the performance without dead-lock .
 ```
 for irq in $(grep -E "mt|ra" /proc/interrupts | cut -d: -f1 | sed 's, *,,') do echo 8 > "/proc/irq/$irq/smp_affinity" done
 
