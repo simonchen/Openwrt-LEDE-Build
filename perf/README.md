@@ -1,6 +1,6 @@
 # 性能调优监控脚本和详细文档
 
-![NAPI轮询进程](https://github.com/simonchen/Openwrt-LEDE-Build/blob/main/perf/NAPI-poll-workers.png?raw=true)
+<img src="https://github.com/simonchen/Openwrt-LEDE-Build/blob/main/perf/NAPI-poll-workers.png?raw=true" width="70%" height="70%">
 * 12 小时、4.8 亿个包 冲锋下，MT7621 内部的“核心权力结构”
  
 ## 深度指标分析：为何它们没排在最上面？
