@@ -51,8 +51,8 @@ Softnet >Squeeze 始终为０ (５亿包处理）
 # BBR Memory & Pacing Stabilization
 # Use BBR for balanced CPU/throughput
 net.ipv4.tcp_congestion_control = bbr
-# CRITICAL: Limits local buffer bloat; prevents Order-0 memory depletion and CPU3 "drowning"
-net.ipv4.tcp_notsent_lowat = 16384
+# CRITICAL: Limits local buffer bloat (1MB is enough); prevents Order-0 memory depletion and CPU3 "drowning"
+net.ipv4.tcp_notsent_lowat = 1048576
 # Reduces RTT memory from 300s to 5s; stops the "permanent slowdown" caused by transient CPU jitters
 net.ipv4.tcp_min_rtt_wlen=5
 # Dampens the "Startup" burst from 200% to 150%; prevents instant reboot due to skb allocation spikes
