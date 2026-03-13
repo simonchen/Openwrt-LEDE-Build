@@ -27,3 +27,119 @@ migration/2：在门口站岗，确保没人敢乱闯 CPU 2 的领地。
 Softnet >Squeeze 始终为０ (５亿包处理）
 
 这套“影子政府”般的内核架构，是 MT7621 冲击 300M+ 稳态的终极秘密。
+
+## Sysctl.conf 深度调优（部分针对BBR算法的内存管理和延迟计算方法）
+```
+# BBR Memory & Pacing Stabilization
+# Use BBR for balanced CPU/throughput
+net.ipv4.tcp_congestion_control = bbr
+# CRITICAL: Limits local buffer bloat; prevents Order-0 memory depletion and CPU3 "drowning"
+net.ipv4.tcp_notsent_lowat = 16384
+# Reduces RTT memory from 300s to 5s; stops the "permanent slowdown" caused by transient CPU jitters
+net.ipv4.tcp_min_rtt_wlen=5
+# Dampens the "Startup" burst from 200% to 150%; prevents instant reboot due to skb allocation spikes
+net.ipv4.tcp_pacing_ss_ratio=150
+# Disables slow-start restart after idle; maintains peak rate after short transmission gaps
+net.ipv4.tcp_slow_start_after_idle=0
+# Enables RACK (Recent ACK); essential for WiFi environments to handle packet reordering without dropping rate
+net.ipv4.tcp_recovery=3
+
+# Net core and CPU protection
+# Balanced budget for NAPI polling; ensures enough packets are processed per cycle
+net.core.netdev_budget=300
+# 20ms window; allows CPU3 enough time to handle fragmented memory without context switch thrashing
+net.core.netdev_budget_usecs=20000
+# Increases input queue depth; provides a safety buffer for BBR's "in-flight" packets during CPU spikes
+net.core.netdev_max_backlog=5000
+# Disable timestamping to save CPU3 cycles
+net.core.netdev_tstamp_prequeue = 0
+
+# Basic memory and net core config
+vm.min_free_kbytes=16384
+#fs.file-max = 51200
+net.core.rmem_max = 67108864
+net.core.wmem_max = 67108864
+net.core.somaxconn = 4096
+net.core.rps_sock_flow_entries = 4096
+
+net.ipv4.tcp_syncookies = 1
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_tw_recycle = 0
+net.ipv4.tcp_fin_timeout = 30
+net.ipv4.tcp_keepalive_time = 600
+net.ipv4.ip_local_port_range = 10000 65000
+net.ipv4.tcp_max_syn_backlog = 4096
+net.ipv4.tcp_max_tw_buckets = 16384
+net.ipv4.tcp_rmem = 4096 87380 8388608
+net.ipv4.tcp_wmem = 4096 65536 8388608
+```
+
+## /proc/pagetypeinfo 中的奥秘
+### sysctl.conf 调优前的内存分布 (15小时高压测试后)
+```
+cat /proc/pagetypeinfo
+Page block order: 10
+Pages per block: 1024
+
+Free pages count per migrate type at order 0 1 2 3 4 5 6 7 8 9 10
+
+Node 0, zone Normal, type Unmovable 9 40 42 2 11 4 0 2 1 1 3
+
+Node 0, zone Normal, type Movable 71 461 316 97 33 6 3 2 2 1 4
+
+Node 0, zone Normal, type Reclaimable 3 1 20 3 1 0 1 0 0 1 0
+
+Node 0, zone Normal, type HighAtomic 0 0 0 0 0 0 0 0 0 0 0
+
+Number of blocks type Unmovable Movable Reclaimable HighAtomic
+
+Node 0, zone Normal 22 39 3 0
+```
+- 核心危机：高阶连续页（High-Order Pages）几乎耗尽
+Order 5-9 的枯竭：看 Movable（可移动）这一行，从 Order 5 开始，可用块仅剩个位数（6, 3, 2, 2, 1）。
+后果：在 MSDU=3 的聚合下，驱动层和网络协议栈申请大块连续内存（例如用于接收环形缓冲区的 kmalloc）时，内核已经找不到现成的连续物理页了。
+连锁反应：此时内核会频繁触发 Lumpy Reclaim（碎片整理），这会直接抢占 CPU0/1 的周期，导致你观察到的 Load 4.91 居高不下。
+
+- 关键瓶颈：Unmovable（不可移动）页的分布
+分析：Unmovable 在 Order 10 还有 3 个块，但在 Order 6-7 却是 0 或 2。
+风险：内核的核心组件（如驱动申请的 DMA 内存）通常申请 Unmovable 内存。如果 Order 6/7 彻底断流，一旦驱动尝试重新初始化或申请新的 Buffer，系统会直接卡死或报 page allocation failure。
+
+- Reclaimable（可回收）几乎为零
+分析：这一行全是 0, 1, 3 这样的小数。
+解读：这说明你的 vfs_cache_pressure（文件缓存压力）已经把磁盘缓存挤压到了极致，内存中几乎没有任何可以轻易置换出来的“软空间”了。现在的 56MB 空闲内存全是实打实的“死钱”，腾挪空间极小。
+
+- HighAtomic（紧急备用金）为零
+解读：HighAtomic 这一行全 0 是最危险的信号。在网络高压下，当普通申请失败时，内核会尝试从这个“紧急池”里拿内存。现在这里没钱了，意味着下一次大包申请一旦失败，就是直接丢包（BA MISS 爆发）或进程挂起。
+
+### 某次用 ``` echo 1 > /proc/sys/vm/compact_memory ```紧缩内存后
+```
+cat /proc/pagetypeinfo
+Page block order: 10
+Pages per block:  1024
+
+Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+Node    0, zone   Normal, type    Unmovable     45     77     67      9      5      3      3      1      3      0      3
+Node    0, zone   Normal, type      Movable     11     15      4      3      2      1      1     12     11      7      9
+Node    0, zone   Normal, type  Reclaimable     17     40     31      6      1      0      1      0      0      1      0
+Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+
+Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+Node 0, zone   Normal           22           39            3            0
+```
+Movable区域，虽有改善可连续order 10 (4MB) 内存块数增多，但是，order 0 数字很小，表明skb内存不释放，可能长期被占据。
+
+### sysctl.conf 调优后的内存分布
+```
+cat /proc/pagetypeinfo
+Page block order: 10
+Pages per block:  1024
+
+Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+Node    0, zone   Normal, type    Unmovable    129    161    138     12      3      0      2      0      1      1      0
+Node    0, zone   Normal, type      Movable    347    451    204     50     10      1      1      1      1      0     12
+Node    0, zone   Normal, type  Reclaimable     12     53     36     11      0      0      0      0      0      1      0
+Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+
+Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+Node 0, zone   Normal           19           42            3            0
+```
