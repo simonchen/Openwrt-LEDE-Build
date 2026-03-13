@@ -4,7 +4,7 @@
 
 <img width="450" height="225" alt="image" src="https://github.com/user-attachments/assets/5237b494-05bd-461c-99d3-5c8c2fcf47d8" />
 
-# C-Life-XG1 performance 
+# C-Life-XG1 performance issue
 - Shell script to make CPU cores balance on MT7915 & br-lan / Wireless interface "wlan1-1" RPS
 ```
 for irq in $(grep -E "mt|ra" /proc/interrupts | cut -d: -f1 | sed 's, *,,') do echo 8 > "/proc/irq/$irq/smp_affinity" done
@@ -18,6 +18,9 @@ echo "f" > /sys/class/net/br-lan/queues/rx-0/rps_cpus
 - 'f' value would be easily conusming the CPU usage in a short time and causing High [SoftIrqd] usage furthermore dead-locks as soon,
 Rotating 'd'(1110) or 'e' (1101) may helps to improve the performance without dead-lock .
 <img width="576" height="429" alt="image" src="https://github.com/user-attachments/assets/6b765aa7-bc90-4014-910b-81a499a86b7d" />
+
+# FINAL OPTIMISE DETAILS with C-Life-XG1 (MT7621 + MT7915)
+- 参考：[MT7621 + MT7915性能调优监控脚本和详细文档](https://github.com/simonchen/Openwrt-LEDE-Build/blob/main/perf/README.md)
 
 # Compile in Virtual Machine
 if you take 8 more threads (e.g, make -j8 V=s) to compile whole project, please make sure that you have sufficient memory assigned in virtual machine.
