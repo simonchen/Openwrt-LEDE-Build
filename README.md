@@ -26,7 +26,7 @@ if you take 8 more threads (e.g, make -j8 V=s) to compile whole project, please 
 
 # Feeds
 packages/helloword have been updated 
-(https://github.com/simonchen/packages) (https://github.com/simonchen/helloworld.git)
+(https://github.com/simonchen/packages) (https://github.com/simonchen/helloworld.git) (https://github.com/simonchen/luci.git)
 
 # What's New
 ```
