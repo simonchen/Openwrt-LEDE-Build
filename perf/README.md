@@ -209,6 +209,7 @@ Node 0, zone   Normal           19           42            3            0
 默认内核系统给的值都是针对大内存GB以上的默认值，不适合GB以下MB的小内存。
 
 ### sysctl.conf 调优后的内存分布 （压力测试9小时后）
+```
 Page block order: 10
 Pages per block:  1024
 
@@ -220,7 +221,7 @@ Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0  
 
 Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           21           40            3            0
-
+```
 写了个脚本每隔两秒刷新下/proc/pagetypeinfo
 发现Unmovable绝大数时间是order 0~5 在组合分散，6，7目前都为0，有时会向8借1个，8为0，但马上还给8，
 movable好像基本不动，只有order 0, 1在增减
