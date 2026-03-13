@@ -222,9 +222,11 @@ Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0  
 Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           21           40            3            0
 ```
+内核的Order 9,10仍有1，2盈余，很不错！
+
 写了个脚本每隔两秒刷新下/proc/pagetypeinfo
-发现Unmovable绝大数时间是order 0~5 在组合分散，6，7目前都为0，有时会向8借1个，8为0，但马上还给8，
-movable好像基本不动，只有order 0, 1在增减
+发现内核Unmovable绝大数时间是order 0~5 在组合分散，6，7目前都为0，有时会向8借1个，8为0，但马上还给8，
+movable好像基本不动，只有order 0, 1在增减。
 
 **1. 揭秘“向 Order 8 借调”：内核的生存博弈**
 在 MT7621 (MIPS) 上，Order 8 代表 1MB 的连续内存。
