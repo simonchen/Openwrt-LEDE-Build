@@ -1,6 +1,7 @@
 # MT7621 + MT7915性能调优监控和详细文档
-## 目标
-电脑端 iperf3 -R -P 1 -w 1M -t 72000 按20小时不间断压测
+## 环境与目标
+路由端 AP+CLIENT 5G 中继
+电脑端 WIFI 5G 网卡，Windows 11命令行: iperf3 -R -P 1 -w 1M -t 72000 按20小时不间断压测
 <img width="659" height="316" alt="image" src="https://github.com/user-attachments/assets/bf881d3a-de46-45eb-b2bb-e35917e34b1a" />
 
 ## MT7915 硬中断的职责
