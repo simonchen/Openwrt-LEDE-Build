@@ -152,6 +152,6 @@ Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           19           42            3            0
 ```
 连续 Movable 4MB (order 10) 内存有12个， order 0 有347个， 表明回收顺畅，可用大块内存充足，系统适合长跑。
-长跑过程中，如有发现order 0不释放，内存又需要再分配(skb都是小包压在order 0~4)，可向其它order 5~9申请，除非order 5~9耗尽，
+长跑过程中，如有发现order 0不释放，内存又需要再分配(skb都是小包压在order 0-4)，可向其它order 5-9申请，除非order 5-9耗尽，
 但只要order 10仍有盈余，就能保证系统长跑时间，这是回收、再分配内存的闭环，需要syctl.conf对net.core / net.ipv4中对包管理的优化才能达到，
 默认内核系统给的值都是针对大内存GB以上的默认值，不适合GB以下MB的小内存。
