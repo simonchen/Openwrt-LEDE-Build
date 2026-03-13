@@ -28,7 +28,7 @@ Softnet >Squeeze 始终为０ (５亿包处理）
 
 这套“影子政府”般的内核架构，是 MT7621 冲击 300M+ 稳态的终极秘密。
 
-## Sysctl.conf 深度调优（部分针对BBR算法的内存管理和延迟计算方法）
+## Sysctl.conf 深度调优（针对BBR算法的内存管理和延迟计算方法）
 ```
 # BBR Memory & Pacing Stabilization
 # Use BBR for balanced CPU/throughput
