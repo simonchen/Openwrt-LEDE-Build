@@ -1,9 +1,25 @@
 # 性能调优监控脚本和详细文档
 
-<img src="https://github.com/simonchen/Openwrt-LEDE-Build/blob/main/perf/NAPI-poll-workers.png?raw=true" width="70%" height="70%">
-* 12 小时、4.8 亿个包 冲锋下，MT7621 内部的“核心权力结构”
+## MT7915 硬中断的职责
+*1. CPU3 (MT7915e IRQ 25)：无线接入的“守门员” (Rx & Interrupt)*
+- CPU3 承载的是 MT7915 的物理层硬中断。它的任务是“最脏、最快、实时性最高”的：
+Rx 数据接收 (DMA 搬运)：当 MT7915 硬件 Buffer 收到空中的无线包时，会触发 IRQ 31。CPU3 必须立即响应，将数据包从 WiFi 芯片的内存通过 PCIe 总线搬运到主内存（DDR）中，并封装成 sk_buff 结构。
+- ACK 响应控制 (SIFS 时间窗)：WiFi 协议要求在极短的时间内回复 Block Ack。如果 CPU3 忙于其他事务（如 RPS 洗包），响应变慢，对端就会认为丢包，从而触发 BA MISS。
+NAPI 轮询调度：CPU3 负责执行 mt76_poll。它就像一个高速旋转的转子，不停地检查硬件 Ring Buffer，确保缓冲区不溢出。
+- 信标 (Beacon) 与同步：维持与中继上级的时钟同步。
+当前状态总结： 你之前看到的 91.2% 负载，主要就是 CPU3 在疯狂搬运数据包。如果它慢了，整个链路就会断流。
+*CPU2 (MT7915e-hif / mt76-tx)：无线发送的“排队调度员” (Tx Logic)*
+- CPU2 运行的是驱动层的 发送工作队列。虽然发送动作最终由硬件完成，但“发什么、怎么发”全靠 CPU2：
+- 聚合帧构造 (A-MPDU/A-MSDU)：这是最耗 CPU 的地方。你限制了 MSDU=3，CPU2 就要负责把内存里零散的小包，按照 M3 的规格“打包”成一个巨大的聚合帧。
+- Tx 描述符管理：为每个要发送的包分配 DMA 描述符，告诉硬件这些包在内存的什么位置。
+- 拥塞算法反馈 (Cubic/BBR)：你现在切到了 Cubic，CPU2 就要根据丢包和 RTT 情况，计算当前的 发送窗口 (CWND)。如果窗口缩了，CPU2 就得把包压在队列里不发。
+- 重传逻辑处理：当 CPU3 收到对端的“丢包报告”后，会通知 CPU2，CPU2 负责从重传队列里找出那个包，重新塞进发送 Ring Buffer。
+- CPU2 是你的“弹药调度中心”。如果 CPU2 慢了，WiFi 发送就会“卡顿”，表现为吞吐量曲线出现锯齿。
  
 ## 深度指标分析：为何它们没排在最上面？
+<img src="https://github.com/simonchen/Openwrt-LEDE-Build/blob/main/perf/NAPI-poll-workers.png?raw=true" width="70%" height="70%">
+
+**12 小时、4.8 亿个包 冲锋下，MT7621 内部的核心权力结构**
 在 htop 默认按 CPU% 排序时，它们没排在最上面是因为：
 多核分摊 (Total vs Per-CPU)：你现在的 iperf3 在 CPU 0/1 上跑，合并占用可能达到 90%+，所以它稳居第一。
 kworker 的瞬时性：注意看图中 kworker/u9:1+napi_workq 的占用（29.3%）。这验证了你之前的直觉：它们非常忙，但它们是异步的。
