@@ -209,6 +209,33 @@ Node 0, zone   Normal           19           42            3            0
 默认内核系统给的值都是针对大内存GB以上的默认值，不适合GB以下MB的小内存。
 
 ### sysctl.conf 调优后的内存分布 （压力测试9小时后）
+Page block order: 10
+Pages per block:  1024
 
+Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+Node    0, zone   Normal, type    Unmovable    122    145     88     31      3      0      1      0      1      1      2
+Node    0, zone   Normal, type      Movable      5     13     14     27     16      8      4      3      0      0      9
+Node    0, zone   Normal, type  Reclaimable     17     39     35     11      0      0      0      0      0      1      0
+Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+
+Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+Node 0, zone   Normal           21           40            3            0
+
+写了个脚本每隔两秒刷新下/proc/pagetypeinfo
+发现Unmovable绝大数时间是order 0~5 在组合分散，6，7目前都为0，有时会向8借1个，8为0，但马上还给8，
+movable好像基本不动，只有order 0, 1在增减
+
+**1. 揭秘“向 Order 8 借调”：内核的生存博弈**
+在 MT7621 (MIPS) 上，Order 8 代表 1MB 的连续内存。
+触发点： 当 MT7915 驱动 或 协议栈逻辑 需要处理一波密集的 MSDU 聚合 (M3) 或 BBR 的高频 ACK 响应时，低位的 Unmovable（Order 0-5）可能瞬间被描述符（Descriptors）填满。
+借调行为： 内核被迫向上级（Order 8）拆借一块 1MB 的大内存，迅速粉碎成多个小块（Order 0-3）来承载这些瞬时爆发的中断请求。
+迅速归还： 一旦这波包处理完（ACK 发出或 DMA 传输结束），这些临时的描述符被释放。由于你开启了 NAPI 调度平衡 和 lowat=1MB，系统没有后续的堆积压力，内存分配器（Buddy System）会立刻尝试合并这些碎片并还给 Order 8。
+
+**2. 为什么 Movable（可移动）基本不动？**
+这是本次压测最成功的调优结果：
+BBR 的功劳： 因为 lowat=1MB 严格控制了应用层（iperf3）往内核塞数据的节奏，导致 Socket Buffer (sk_buff) 的申请量处于一种极其稳定的“等量代换”状态。
+物理层保障： 既然数据包在内核中不堆积（发得快、收得快），Movable 内存（存放数据包载荷）就保持了极高的周转率，所以你看到高位（Order 10 = 9个）稳如泰山。
+
+**3. “Unmovable 6, 7 为 0”的潜在风险**
 
 
