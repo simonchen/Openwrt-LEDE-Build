@@ -50,6 +50,14 @@ Softnet >Squeeze 始终为０ (５亿包处理）
 这套“影子政府”般的内核架构，是 MT7621 冲击 300M+ 稳态的终极秘密。
 
 ## Sysctl.conf 深度调优（针对BBR算法的内存管理和延迟计算方法）
+- net.ipv4.tcp_notsent_lowat = 1048576
+
+Buffer Bloat 缓冲区膨胀消除： lowat=1MB 限制了在套接字发送队列中堆积的数据量。这不仅减轻了 CPU2 (mt76-tx) 的封装压力，更重要的是让 CPU3 (Rx/IRQ) 腾出了处理 ACK 回包的调度间隙。
+
+- net.ipv4.tcp_min_rtt_wlen=5
+
+BBR 采样逻辑闭环： BBR 依赖 RTT 采样。以前没限 lowat 时，大量的 buffer 堆积伪造了“高延迟”，导致 BBR 误判带宽缩减。
+
 ```
 # BBR Memory & Pacing Stabilization
 # Use BBR for balanced CPU/throughput
