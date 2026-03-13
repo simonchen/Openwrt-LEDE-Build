@@ -127,8 +127,16 @@ Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           22           39            3            0
 ```
 Movable区域，虽有改善可连续order 10 (4MB) 内存块数增多，但是，order 0 数字很小，表明skb内存不释放，可能长期被占据。
+- 元凶是系统默认 ```net.ipv4.tcp_notsent_lowat=4294967295```
+**1. 为什么这个参数会“吃掉”你的 Order-0 内存？**
+内存堆积机制：BBR 为了探测带宽，会尽可能多地把数据包塞进发送缓冲区。当 ```tcp_notsent_lowat``` 无限制时，内核会允许 BBR 在内存中积压海量尚未发出的 sk_buff（每个包都占用大量的 Unmovable 和 Order-0 内存）。
+碎片化诱因：这几百兆的“待发包”会瞬间占满 SLAB 分配器。当驱动（mt76 on IRQ25 CPU3）急需一个内存描述符来处理收到的 ACK 时，发现内存全被这些“还没发出去的包”占满了，于是触发 direct reclaim（直接回收）。
+后果：这就是你看到的 Order-0 瞬间枯竭，CPU3 随即陷入“搬运这些无意义积压包”的无效劳动中，最终导致崩溃。
+**2. 为什么它会让 BBR “逻辑混乱”？**
+缓冲区膨胀 (Bufferbloat)：大量数据堆积在本地内存而非物理链路中，会导致 RTT 采样包含了“在内核排队的时间”。
+伪延迟：BBR 采样到了这个由于“内存挤压”产生的延迟，误以为是网络拥塞，于是触发了那个 300秒的长记忆减速循环。
 
-### sysctl.conf 调优后的内存分布
+### sysctl.conf 调优后的内存分布 (TODO: 运行初期）
 ```
 cat /proc/pagetypeinfo
 Page block order: 10
@@ -143,3 +151,7 @@ Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0  
 Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           19           42            3            0
 ```
+连续 Movable 4MB (order 10) 内存有12个， order 0 有347个， 表明回收顺畅，可用大块内存充足，系统适合长跑。
+长跑过程中，如有发现order 0不释放，内存又需要再分配(skb都是小包压在order 0~4)，可向其它order 5~9申请，除非order 5~9耗尽，
+但只要order 10仍有盈余，就能保证系统长跑时间，这是回收、再分配内存的闭环，需要syctl.conf对net.core / net.ipv4中对包管理的优化才能达到，
+默认内核系统给的值都是针对大内存GB以上的默认值，不适合GB以下MB的小内存。
