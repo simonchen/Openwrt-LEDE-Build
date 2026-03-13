@@ -1,5 +1,6 @@
 # 性能调优监控脚本和详细文档
-## 目标一张图
+## 目标
+电脑端 iperf3 -R -P 1 -w 1M -t 72000 按20小时不间断压测
 <img width="659" height="316" alt="image" src="https://github.com/user-attachments/assets/bf881d3a-de46-45eb-b2bb-e35917e34b1a" />
 
 ## MT7915 硬中断的职责
