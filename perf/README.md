@@ -208,7 +208,7 @@ Node 0, zone   Normal           19           42            3            0
 但只要order 10仍有盈余，就能保证系统长跑时间，这是回收、再分配内存的闭环，需要syctl.conf对net.core / net.ipv4中对包管理的优化才能达到，
 默认内核系统给的值都是针对大内存GB以上的默认值，不适合GB以下MB的小内存。
 
-### sysctl.conf 调优后的内存分布 （压力测试9小时后）
+### sysctl.conf 调优后的内存分布 （压力测试中期-9小时后）
 ```
 Page block order: 10
 Pages per block:  1024
@@ -250,3 +250,26 @@ Unmovable Order 1 和 2 的数量远高于 Order 0，这说明 NAPI 调度 和 M
 状态： Order 8 为 0，但 Order 7 为 1，Order 6 为 2。
 逻辑： 这是一个典型的“向下拆借”态。内核刚刚把一个 Order 8 拆开了，分成了 1个 Order 7 和 2个 Order 6。
 猜想： 这大概率发生在你 iperf3 曲线从“深坑”爬升的阶段。内核通过牺牲大块内存的连续性，换取了足够多的描述符位，支撑起了那一波 310Mbps 的吞吐爆发。
+
+### sysctl.conf 调优后的内存分布 （压力测试后期-15小时后）
+```
+Page block order: 10
+Pages per block:  1024
+
+Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+Node    0, zone   Normal, type    Unmovable     73    141    105     12      3      1      1      0      1      1      2
+Node    0, zone   Normal, type      Movable    159    107     42      7      1      2      2      1      1      0      5
+Node    0, zone   Normal, type  Reclaimable     23     39     35     11      0      0      0      0      0      1      0
+Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+
+Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+Node 0, zone   Normal           21           40            3            0
+```
+- 内存博弈：Movable 的“极限抗压”与 Reclaimable 的复苏
+**Movable Order 10 剩余 5 个：** 昨晚掉到 6 个后，现在稳定在 5 个。这说明系统在 200M-240Mbps 的吞吐下，已经形成了一套“拆借与合并”的动态收支平衡。
+**Reclaimable (可回收) 的出现：** 注意到 Reclaimable 出现了一个 Order 9 和一些低位碎片。这非常好！说明内核在压力下，成功将一部分原本被占用的内存标记为了可回收态，增加了系统的灵活性。
+- Unmovable 依然坚固： Order 8, 9, 10 (1, 1, 2) 依然存在。这证实了你的 IRQ 隔离和 lowat 调优 确实保住了内核的底线。
+- 吞吐量与重传率：1.0 的警戒线
+重传率 1.02 (万分之)： 这是个关键信号。它微幅突破了 1.0 的心理阈值。
+原因分析： 结合 MCS 9 (866.7M) 和 BA MISS (188/s)，可以看出系统目前处于“算力换吞吐”的边缘。MCS 9 调制极高，对 CPU3 的干扰（Interrupt Latency）变大，导致了微小的重传增加。
+- 策略评价： 吞吐量维持在 244Mbps 且 CPU 占用率（86.5%）相比昨晚的 94% 有所回落，说明系统找到了一个更节能的平衡点。
