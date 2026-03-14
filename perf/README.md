@@ -278,6 +278,7 @@ Node 0, zone   Normal           21           40            3            0
 **开启监控时**
   
 <img width="384" height="180" alt="image" src="https://github.com/user-attachments/assets/560bccfb-90d7-4bc8-852d-ecf43834194e" />
+
 - SSH/监控的隐形成本：
   每一个 top、cat /proc/pagetypeinfo 或 slabinfo 的执行，都会触发一次 User Space（用户态）到 Kernel Space（内核态）的上下文切换。
 - 内存锁竞争：
