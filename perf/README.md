@@ -273,3 +273,18 @@ Node 0, zone   Normal           21           40            3            0
 重传率 1.02 (万分之)： 这是个关键信号。它微幅突破了 1.0 的心理阈值。
 原因分析： 结合 MCS 9 (866.7M) 和 BA MISS (188/s)，可以看出系统目前处于“算力换吞吐”的边缘。MCS 9 调制极高，对 CPU3 的干扰（Interrupt Latency）变大，导致了微小的重传增加。
 - 策略评价： 吞吐量维持在 244Mbps 且 CPU 占用率（86.5%）相比昨晚的 94% 有所回落，说明系统找到了一个更节能的平衡点。
+- 电脑端的速率： 能稳定在250~300M区域 ， 但如果开了监控会干扰BBR RTT的延迟探测，速率会下降50M左右，但能在200M，关闭监控后，2分钟左右会回升到250M+
+
+**开启监控时**
+  
+<img width="384" height="180" alt="image" src="https://github.com/user-attachments/assets/560bccfb-90d7-4bc8-852d-ecf43834194e" />
+- SSH/监控的隐形成本：
+  每一个 top、cat /proc/pagetypeinfo 或 slabinfo 的执行，都会触发一次 User Space（用户态）到 Kernel Space（内核态）的上下文切换。
+- 内存锁竞争：
+  读取 /proc 文件系统需要遍历内核的数据结构，这会触发行锁（Spinlock）。在高频中断（每秒 180+ BA MISS）和 BBR 高频采样下，这些微小的锁等待会导致 RTT 瞬时抖动。
+- BBR 的反应：
+  BBR 对 RTT 的增加极度敏感。它感测到了由于监控引起的微小延迟增加，判定为“瓶颈带宽缩小”，于是立即主动收缩发送窗口（Window Reduction），这就是你看到的 50M 跌幅。
+
+**关闭监控后**
+
+<img width="472" height="219" alt="image" src="https://github.com/user-attachments/assets/60dec8ad-7d22-41f2-bf50-4faf7e00344c" />
