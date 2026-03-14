@@ -298,3 +298,19 @@ Node 0, zone   Normal           21           40            3            0
 **关闭监控后**
 
 <img width="384" height="180" alt="image" src="https://github.com/user-attachments/assets/60dec8ad-7d22-41f2-bf50-4faf7e00344c" />
+
+### sysctl.conf 调优后的内存分布 （压力测试后期-17小时后）
+```
+Page block order: 10
+Pages per block:  1024
+
+Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+Node    0, zone   Normal, type    Unmovable     60    146    106      5      0      2      3      1      2      0      2
+Node    0, zone   Normal, type      Movable    207    170     53     16      2      3      1      1      2      1      4
+Node    0, zone   Normal, type  Reclaimable      5     17     35     11      0      0      0      0      0      1      0
+Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+
+Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+Node 0, zone   Normal           21           40            3            0
+```
+不同大小内存页依然有拆借，但此时，内核系统已明显出现了内存延迟问题诱发 napi-workq 进程在处理洗包时变慢，硬中断DMA延迟，当BBR RTT感知到，又下调发包速率。
