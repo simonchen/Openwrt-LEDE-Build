@@ -315,3 +315,40 @@ Node 0, zone   Normal           21           40            3            0
 ```
 不同大小内存页依然有拆借，但此时，内核系统已明显出现了内存延迟（长期运行后SLAB缓存着色延迟）问题诱发 napi-workq 进程在处理洗包时变慢，硬中断DMA延迟，当BBR RTT感知到，又下调发包速率。不要动任何参数，BBR会自愈修复, 修复后的速率能在250M+撑几分钟，但又会回落 ，然后再反复，这就是真实水平。
 
+### sysctl.conf 调优后的内存分布 （压力测试后期-20小时后结束）
+
+```
+Page block order: 10
+Pages per block:  1024
+
+Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+Node    0, zone   Normal, type    Unmovable    233    207    112      7      8     17      4      1      1      0      2
+Node    0, zone   Normal, type      Movable   1591   1102    617    281     90     48     18      4      1      3      4
+Node    0, zone   Normal, type  Reclaimable    285    172     75     43     11      4      1      0      0      1      0
+Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+
+Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+Node 0, zone   Normal           21           40            3            0
+```
+核心参数对比表：稳态 vs 结束我们可以清晰地看到系统是如何在压力消失后“喘息”的：
+指标 (Order) 压测中 (15H)压测后(20H+)
+Unmovable O3 11 7 释放了 4 个，说明驱动部分聚合帧缓存已归还。
+Unmovable O4-5 1/2 8/17 异常升高。说明小块碎片在压力释放后尝试向上合并，但卡在了中阶。
+Movable O0 152 1591 业务逻辑内存完全释放，系统转入静默。
+Order 10(Total) 6(2+4) 6(2+4)
+- 内核是稳定的： 没有 Panic，说明 SLAB 至少在逻辑链条上是完整的。
+- 效率是受损的： 这种“不完全合并”的状态，意味着系统的 算力天花板 已经因为内存延迟而永久下移了约 10%-15%。
+
+## iperf3 电脑端结束最终状态
+20小时结束后， iperf3的性能报告：
+[ ID] Interval           Transfer     Bandwidth       Retr
+[  5]   0.00-72000.00 sec  0.00 %v絪   248 Mbits/sec  166360             sender
+[  5]   0.00-72000.00 sec  0.00 %v絪   248 Mbits/sec                  receiver
+
+iperf Done.
+
+最终Bandwidth定格在 248 Mbits/sec。相比初期的 300Mbps 均线，跌幅约 17.3%。系统没有崩溃，而是通过 BBR 的感知，用速率换取了生存空间
+
+## 结论
+实验结论：SLAB 的“带病生存”模型
+这次压测证明了一个关键结论：在嵌入式 Linux 网络调优中，内存分配的老化确实会导致“算力贬值”，但只要拥塞控制算法（BBR）足够灵敏，且人为压低了发送窗口（notsent_lowat），系统可以进入一种“性能衰减但逻辑稳态”的长效运行模式。
