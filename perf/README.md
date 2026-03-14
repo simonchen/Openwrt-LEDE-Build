@@ -288,4 +288,4 @@ Node 0, zone   Normal           21           40            3            0
 
 **关闭监控后**
 
-<img width="472" height="219" alt="image" src="https://github.com/user-attachments/assets/60dec8ad-7d22-41f2-bf50-4faf7e00344c" />
+<img width="384" height="180" alt="image" src="https://github.com/user-attachments/assets/60dec8ad-7d22-41f2-bf50-4faf7e00344c" />
