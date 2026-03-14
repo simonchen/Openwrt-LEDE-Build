@@ -313,4 +313,5 @@ Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0  
 Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           21           40            3            0
 ```
-不同大小内存页依然有拆借，但此时，内核系统已明显出现了内存延迟问题诱发 napi-workq 进程在处理洗包时变慢，硬中断DMA延迟，当BBR RTT感知到，又下调发包速率。
+不同大小内存页依然有拆借，但此时，内核系统已明显出现了内存延迟问题诱发 napi-workq 进程在处理洗包时变慢，硬中断DMA延迟，当BBR RTT感知到，又下调发包速率。不要动任何参数，BBR会自愈修复, 修复后的速率能在250M+撑几分钟，但又会回落 ，然后再反复，这就是真实水平。
+
