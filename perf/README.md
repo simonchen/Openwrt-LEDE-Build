@@ -4,6 +4,15 @@
 电脑端 WIFI 5G 网卡，Windows 11命令行: iperf3 -R -P 1 -w 1M -t 72000 按20小时不间断压测
 <img width="659" height="316" alt="image" src="https://github.com/user-attachments/assets/bf881d3a-de46-45eb-b2bb-e35917e34b1a" />
 
+**注：**
+<sub>
+iperf3 -w 参数的默认值 (https://serverfault.com/questions/777023/whats-the-default-tcp-window-size-of-iperf3)
+iperf3 的 -w (Window Size) 默认值并不是一个固定常数，它取决于操作系统协议栈的实现：
+Linux 系统： 通常默认在 256 KB 左右，但内核会根据 net.ipv4.tcp_rmem 和 tcp_wmem 的设置进行动态自动调优 (Autotuning)。
+Windows 系统： 默认通常在 64 KB 左右，虽然 Windows 也有 Receive Window Auto-Tuning 机制，但在高吞吐（如 300M+）或高延迟环境下，手动指定 -w 1M 能显著提高稳定性，防止 Windows 的激进调优导致吞吐剧烈波动。
+测试中手动锁定 -w 1M让发送端和接收端在 1MB 的水位上达成协议，避免了 MIPS 处理器频繁去处理窗口更新的计算开销。
+</sub>
+
 ## MT7915 硬中断的职责
 
 *1. CPU3 (MT7915e IRQ 25)：无线接入的“守门员” (Rx & Interrupt)*
