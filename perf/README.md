@@ -6,7 +6,7 @@
 - 路由端 AP+CLIENT 5G 中继
 - 电脑端 WIFI 5G 网卡，Windows 11命令行: iperf3 -R -P 1 -w 1M -t 72000 按20小时不间断压测
 - 手工校正CPU各核的分工
-  - CPU2: mt7915e rx接收中断 - napi调度
+  - CPU2: mt7915e rx接收中断 - NAPI 调度
   - CPU2: mt7915e-hif 处理 DMA 搬运 - 从环形缓冲区拿数据 
   - CPU2: 驱动级绑定 mt76-tx 处理发送逻辑 - 包聚合发送给电脑端 或上级ap
   - CPU0/1：napi-workq 进程 
