@@ -1,9 +1,16 @@
 # MT7621 + MT7915性能调优监控和详细文档
-## 环境与目标
-路由端 AP+CLIENT 5G 中继
-电脑端 WIFI 5G 网卡，Windows 11命令行: iperf3 -R -P 1 -w 1M -t 72000 按20小时不间断压测
-<img width="659" height="316" alt="image" src="https://github.com/user-attachments/assets/bf881d3a-de46-45eb-b2bb-e35917e34b1a" />
 
+## 环境与设定
+- (MT7915 开源驱动)[https://github.com/openwrt/mt76]
+  基于2022年底版本加入几乎所有最新patches(除MT7621不支持wed)，加入针对WIFI5网卡优化的AMSDU聚合max.3限制
+- 路由端 AP+CLIENT 5G 中继
+- 电脑端 WIFI 5G 网卡，Windows 11命令行: iperf3 -R -P 1 -w 1M -t 72000 按20小时不间断压测
+- 手工校正CPU各核的分工
+  - CPU2: mt7915e 产生接收中断 - 产生napi schedule
+  - CPU2: mt7915e-hif 处理 DMA 搬运 - 从环形缓冲区拿数据 
+  - CPU2: 驱动级绑定 mt76-tx 处理发送逻辑 - 包聚合发送给电脑端 或上级ap
+  - CPU0/1：napi-workq 进程 
+    
 **注：**
 <sub>
 iperf3 -w 参数的默认值 (https://serverfault.com/questions/777023/whats-the-default-tcp-window-size-of-iperf3)
