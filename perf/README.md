@@ -234,7 +234,7 @@ Node 0, zone   Normal           19           42            3            0
 
 ### sysctl.conf 两次不同调优后跑到中期的内存分布对比
 
-- 压力测试中期-9小时后 - $${\color{blue} IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU3 }$$
+#### 压力测试中期-9小时后: IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU3
 
 ```
 Page block order: 10
@@ -250,7 +250,7 @@ Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           21           40            3            0
 ```
 
-- 压力测试中期-11小时后 - $${\color{blue} IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU2 }$$
+#### 压力测试中期-11小时后 - $${\color{blue} IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU2 }$$
 ```
 cat /proc/pagetypeinfo
 Page block order: 10
@@ -265,7 +265,7 @@ Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0  
 Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           21           40            3            0
 ```
-第二组数据（当前状态）显示系统成功避开了“内存管理死锁”。以下是深度定量拆解：
+#### 第二组数据（当前状态）显示系统成功避开了“内存管理死锁”。以下是深度定量拆解：
   - 1. 结构性胜出：Unmovable（不可移动页）的“中阶加固”
 旧架构 (IRQ25 on CPU3): Order 4-10 的 Unmovable 计数几乎为 0。这说明驱动在 CPU3 上频繁申请 DMA 描述符时，由于伴随中断竞争，物理页被极度细碎化。
 新架构 (IRQ25 on CPU2): Order 4-5 的 Unmovable 计数高达 22/23。
@@ -282,7 +282,7 @@ Node 0, zone   Normal           21           40            3            0
 数据： 第二组的 Reclaimable 在 Order 0-4 均有显著增加。
 深度逻辑： 这说明 VFS/Inode 缓存变得活跃。由于 iperf3 在用户态运行，它产生的系统调用会触碰这些页。
 结论： 速率下降是因为内核在处理这些 Reclaimable 页时，由于其分散在不同 Order，导致 TLB 寻址开销 变大。这证实了你的感知：速率没开始那么猛，但系统变稳了。
-**终极定性判据：架构升级的胜利**
+#### 终极定性判据：架构升级的胜利
 - 旧架构崩溃原因： Unmovable 几乎全碎在 Order 0-2。当 IRQ25 绑在 CPU3 时，CPU3 在处理中断的瞬间如果需要申请 Order 3，会发现全是碎片，被迫触发 direct_reclaim，进而导致 Spinlock 死锁 和 Watchdog 重启。
 - 新架构稳定原因： 你手动剥离了 CPU2，使得驱动申请 Unmovable 页时非常有秩序（保住了 Order 4/5）。同时 CPU3 能安心拼凑出 127 个 Movable Order 3。
 目前的内存健康度评级：优（A-）。
