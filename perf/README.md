@@ -234,7 +234,7 @@ Node 0, zone   Normal           19           42            3            0
 
 ### sysctl.conf 两次不同调优后跑到中期的内存分布对比
 
-- 压力测试中期-9小时后 - IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU3
+- 压力测试中期-9小时后 - $${\color{blue} IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU3 }$$
 
 ```
 Page block order: 10
@@ -250,7 +250,7 @@ Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           21           40            3            0
 ```
 
-- 压力测试中期-11小时后 - IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU2
+- 压力测试中期-11小时后 - $${\color{blue} IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU2 }$$
 ```
 cat /proc/pagetypeinfo
 Page block order: 10
