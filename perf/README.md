@@ -10,8 +10,14 @@
   - CPU2: mt7915e-hif 处理 DMA 搬运 - 从环形缓冲区拿数据 
   - CPU2: 驱动级绑定 mt76-tx 处理发送逻辑 - 包聚合发送给电脑端 或上级ap
   - CPU0/1：napi-workq 进程 
+- 连续6小时压测后的性能
+
+  ![alt=连续6小时压测后的性能](300M.png)
   
-**注：**
+**注1：**
+<sub>更多压测性能分析依赖于对硬、软中断在各CPU核的分布，以及SLAB内存管理碎片化，详见后面</sub>
+
+**注2：**
 <sub>
 iperf3 -w 参数的默认值 (https://serverfault.com/questions/777023/whats-the-default-tcp-window-size-of-iperf3)
 iperf3 的 -w (Window Size) 默认值并不是一个固定常数，它取决于操作系统协议栈的实现：
