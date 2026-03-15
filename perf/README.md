@@ -2,7 +2,7 @@
 
 ## 环境与设定
 - [MT7915 开源驱动](https://github.com/openwrt/mt76)
-  - 基于2022年底版本加入几乎所有最新patches(除MT7621不支持wed)，加入针对WIFI5网卡优化的AMSDU聚合max.3限制
+  - 基于2022年底版本加入几乎所有最新截止到2026年的官方patches(除MT7621不支持wed)，另，加入针对WIFI5网卡优化的AMSDU聚合max.3限制
 - 路由端 AP+CLIENT 5G 中继
 - 电脑端 WIFI 5G 网卡，Windows 11命令行: iperf3 -R -P 1 -w 1M -t 72000 按20小时不间断压测
 - 手工校正CPU各核的分工
