@@ -10,7 +10,7 @@
   - CPU2: mt7915e-hif 处理 DMA 搬运 - 从环形缓冲区拿数据 
   - CPU2: 驱动级绑定 mt76-tx 处理发送逻辑 - 包聚合发送给电脑端 或上级ap
   - CPU0/1：napi-workq 进程 
-    
+  
 **注：**
 <sub>
 iperf3 -w 参数的默认值 (https://serverfault.com/questions/777023/whats-the-default-tcp-window-size-of-iperf3)
@@ -20,15 +20,14 @@ Windows 系统： 默认通常在 64 KB 左右，虽然 Windows 也有 Receive W
 测试中手动锁定 -w 1M让发送端和接收端在 1MB 的水位上达成协议，避免了 MIPS 处理器频繁去处理窗口更新的计算开销。
 </sub>
 
-## MT7915 硬中断的职责
+## MT7915 硬中断的职责 - 将所有MT7915e-hif / mac 硬中断全部绑定在CPU2的优势
 
-*1. CPU3 (MT7915e IRQ 25)：无线接入的“守门员” (Rx & Interrupt)*
-- CPU3 承载的是 MT7915 的物理层硬中断。它的任务是“最脏、最快、实时性最高”的：
+*1. CPU2 (MT7915e IRQ 25)：无线接入的“守门员” (Rx & Interrupt)*
+- CPU2 承载的是 MT7915 的物理层硬中断。它的任务是“最脏、最快、实时性最高”的：
 Rx 数据接收 (DMA 搬运)：当 MT7915 硬件 Buffer 收到空中的无线包时，会触发 IRQ 25。CPU3 必须立即响应，将数据包从 WiFi 芯片的内存通过 PCIe 总线搬运到主内存（DDR）中，并封装成 sk_buff 结构。
 - ACK 响应控制 (SIFS 时间窗)：WiFi 协议要求在极短的时间内回复 Block Ack。如果 CPU3 忙于其他事务（如 RPS 洗包），响应变慢，对端就会认为丢包，从而触发 BA MISS。
-NAPI 轮询调度：CPU3 负责执行 mt76_poll。它就像一个高速旋转的转子，不停地检查硬件 Ring Buffer，确保缓冲区不溢出。
+- NAPI 轮询调度：CPU2 负责执行 mt76_poll。它就像一个高速旋转的转子，不停地检查硬件 Ring Buffer，确保缓冲区不溢出。
 - 信标 (Beacon) 与同步：维持与中继上级的时钟同步。
-- CPU 3 的 91.2% 负载，主要就是 CPU3 在疯狂搬运数据包。如果它慢了，整个链路就会断流。
 
 *CPU2 (MT7915e-hif / mt76-tx)：无线发送的“排队调度员” (Tx Logic)*
 - CPU2 运行的是驱动层的 发送工作队列。虽然发送动作最终由硬件完成，但“发什么、怎么发”全靠 CPU2：
@@ -37,6 +36,11 @@ NAPI 轮询调度：CPU3 负责执行 mt76_poll。它就像一个高速旋转的
 - 拥塞算法反馈 (Cubic/BBR)：你现在切到了 Cubic，CPU2 就要根据丢包和 RTT 情况，计算当前的 发送窗口 (CWND)。如果窗口缩了，CPU2 就得把包压在队列里不发。
 - 重传逻辑处理：当 CPU3 收到对端的“丢包报告”后，会通知 CPU2，CPU2 负责从重传队列里找出那个包，重新塞进发送 Ring Buffer。
 - CPU2 是你的“弹药调度中心”。如果 CPU2 慢了，WiFi 发送就会“卡顿”，表现为吞吐量曲线出现锯齿。
+
+*CPU3 做什么*
+CPU3专用于HRTIMER中断响应
+- 物理投递： 为了平衡指令发射带宽，内核会**自动**将该 Timer 任务投递到与CPU2共享 L1 Cache 的最邻近空闲 VPE（即 CPU3）。这样既利用了 CPU3 的空闲发射槽位，又保证了 Timer 访问 skb 数据时依然能从共享的 L1 Cache 中直接命中，不需要走 OCP 总线。
+- CPU 3 的 90% 高负载：主要是MT7621的GIC时钟高频调度切换产生的。 mt76-tx 是 “因”，CPU3 的 HRTIMER 爆发是 “果”。
  
 ## 深度指标分析：为何它们没排在最上面？
 <img src="https://github.com/simonchen/Openwrt-LEDE-Build/blob/main/perf/NAPI-poll-workers.png?raw=true" width="70%" height="70%">
