@@ -366,7 +366,7 @@ iperf Done.
 
 ## 结论 
 $${\color{red}
-(TODO: 不准确，因为3小时前手工drop_caches可能导致VFS, 另外, 持续的MT7915e mac硬中断在CPU3上，导致HRTIMER停摆）
+(TODO: 不准确，因为3小时前手工drop_caches可能VFS诱发了内存Order 3的洞化, 另外, 持续的MT7915e mac硬中断在CPU3上，导致HRTIMER停摆）
 }$$
 实验结论：SLAB 的“带病生存”模型
 这次压测证明了一个关键结论：在嵌入式 Linux 网络调优中，内存分配的老化确实会导致“算力贬值”，但只要拥塞控制算法（BBR）足够灵敏，且人为压低了发送窗口（notsent_lowat），**系统可以进入一种“性能衰减但逻辑稳态”的长效运行模式**。
