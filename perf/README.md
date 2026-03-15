@@ -232,7 +232,10 @@ Node 0, zone   Normal           19           42            3            0
 但只要order 10仍有盈余，就能保证系统长跑时间，这是回收、再分配内存的闭环，需要syctl.conf对net.core / net.ipv4中对包管理的优化才能达到，
 默认内核系统给的值都是针对大内存GB以上的默认值，不适合GB以下MB的小内存。
 
-### sysctl.conf 调优后的内存分布 （压力测试中期-9小时后）
+### sysctl.conf 两次不同调优后跑到中期的内存分布对比
+
+- 压力测试中期-9小时后 - IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU3
+
 ```
 Page block order: 10
 Pages per block:  1024
@@ -246,113 +249,43 @@ Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0  
 Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           21           40            3            0
 ```
-内核的Order 9,10仍有1，2盈余，很不错！
 
-写了个脚本每隔两秒刷新下/proc/pagetypeinfo
-发现内核Unmovable绝大数时间是order 0~5 在组合分散，6，7目前都为0，有时会向8借1个，8为0，但马上还给8，
-movable好像基本不动，只有order 0, 1在增减。
-
-**1. 揭秘“向 Order 8 借调”：内核的生存博弈**
-在 MT7621 (MIPS) 上，Order 8 代表 1MB 的连续内存。
-触发点： 当 MT7915 驱动 或 协议栈逻辑 需要处理一波密集的 MSDU 聚合 (M3) 或 BBR 的高频 ACK 响应时，低位的 Unmovable（Order 0-5）可能瞬间被描述符（Descriptors）填满。
-借调行为： 内核被迫向上级（Order 8）拆借一块 1MB 的大内存，迅速粉碎成多个小块（Order 0-3）来承载这些瞬时爆发的中断请求。
-迅速归还： 一旦这波包处理完（ACK 发出或 DMA 传输结束），这些临时的描述符被释放。由于你开启了 NAPI 调度平衡 和 lowat=1MB，系统没有后续的堆积压力，内存分配器（Buddy System）会立刻尝试合并这些碎片并还给 Order 8。
-
-**2. 为什么 Movable（可移动）基本不动？**
-这是本次压测最成功的调优结果：
-BBR 的功劳： 因为 lowat=1MB 严格控制了应用层（iperf3）往内核塞数据的节奏，导致 Socket Buffer (sk_buff) 的申请量处于一种极其稳定的“等量代换”状态。
-物理层保障： 既然数据包在内核中不堆积（发得快、收得快），Movable 内存（存放数据包载荷）就保持了极高的周转率，所以你看到高位（Order 10 = 9个）稳如泰山。
-
-**3. “Unmovable 6, 7 为 0”的潜在风险？**
-不是风险但胜似风险，Order 6,7,8 每一分钟或时间更长（表示更稳）会拆借交换一次，变成001, 101, 201 ...
-处于0rder 0-5 的小块内存不断地频繁向下拆借， 极上动用以上拆借，只要 Unmovable 的 Order 9/10 不消失，哪怕 Order 6/7/8 全归零，系统也是安全的。
-
-**更多内幕**
-- 系统目前手里攥着大量的“零钱”。
-Unmovable Order 1 和 2 的数量远高于 Order 0，这说明 NAPI 调度 和 M3 聚合驱动 正在疯狂周转。每当一个 Wi-Fi 帧处理完，描述符释放，立刻就被下一个包接手了。结论： 内存周转率极高，没有发生“内存空洞”导致的死锁。
-- Order 8 归零的真相
-状态： Order 8 为 0，但 Order 7 为 1，Order 6 为 2。
-逻辑： 这是一个典型的“向下拆借”态。内核刚刚把一个 Order 8 拆开了，分成了 1个 Order 7 和 2个 Order 6。
-猜想： 这大概率发生在你 iperf3 曲线从“深坑”爬升的阶段。内核通过牺牲大块内存的连续性，换取了足够多的描述符位，支撑起了那一波 310Mbps 的吞吐爆发。
-
-### sysctl.conf 调优后的内存分布 （压力测试后期-15小时后）
+- 压力测试中期-11小时后 - IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU2
 ```
+cat /proc/pagetypeinfo
 Page block order: 10
 Pages per block:  1024
 
 Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
-Node    0, zone   Normal, type    Unmovable     73    141    105     12      3      1      1      0      1      1      2
-Node    0, zone   Normal, type      Movable    159    107     42      7      1      2      2      1      1      0      5
-Node    0, zone   Normal, type  Reclaimable     23     39     35     11      0      0      0      0      0      1      0
+Node    0, zone   Normal, type    Unmovable     92    207    195     28     22     23      5      1      0      0      1
+Node    0, zone   Normal, type      Movable     54     23     15    127     50      1      0      0      0      1      7
+Node    0, zone   Normal, type  Reclaimable     39     76     49     27     10      2      0      1      0      0      0
 Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
 
 Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           21           40            3            0
 ```
-- 内存博弈：Movable 的“极限抗压”与 Reclaimable 的复苏
-**Movable Order 10 剩余 5 个：** 昨晚掉到 6 个后，现在稳定在 5 个。这说明系统在 200M-240Mbps 的吞吐下，已经形成了一套“拆借与合并”的动态收支平衡。
-**Reclaimable (可回收) 的出现：** 注意到 Reclaimable 出现了一个 Order 9 和一些低位碎片。这非常好！说明内核在压力下，成功将一部分原本被占用的内存标记为了可回收态，增加了系统的灵活性。
-- Unmovable 依然坚固： Order 8, 9, 10 (1, 1, 2) 依然存在。这证实了你的 IRQ 隔离和 lowat 调优 确实保住了内核的底线。
-- 吞吐量与重传率：1.0 的警戒线
-重传率 1.02 (万分之)： 这是个关键信号。它微幅突破了 1.0 的心理阈值。
-原因分析： 结合 MCS 9 (866.7M) 和 BA MISS (188/s)，可以看出系统目前处于“算力换吞吐”的边缘。MCS 9 调制极高，对 CPU3 的干扰（Interrupt Latency）变大，导致了微小的重传增加。
-- 策略评价： 吞吐量维持在 244Mbps 且 CPU 占用率（86.5%）相比昨晚的 94% 有所回落，说明系统找到了一个更节能的平衡点。
-- 电脑端的速率： 能稳定在250~300M区域 ， 但如果开了监控会干扰BBR RTT的延迟探测，速率会下降50M左右，但能在200M，关闭监控后，2分钟左右会回升到250M+
-
-**开启监控时**
-  
-<img width="384" height="180" alt="image" src="https://github.com/user-attachments/assets/560bccfb-90d7-4bc8-852d-ecf43834194e" />
-
-- SSH/监控的隐形成本：
-  每一个 top、cat /proc/pagetypeinfo 或 slabinfo 的执行，都会触发一次 User Space（用户态）到 Kernel Space（内核态）的上下文切换。
-- 内存锁竞争：
-  读取 /proc 文件系统需要遍历内核的数据结构，这会触发行锁（Spinlock）。在高频中断（每秒 180+ BA MISS）和 BBR 高频采样下，这些微小的锁等待会导致 RTT 瞬时抖动。
-- BBR 的反应：
-  BBR 对 RTT 的增加极度敏感。它感测到了由于监控引起的微小延迟增加，判定为“瓶颈带宽缩小”，于是立即主动收缩发送窗口（Window Reduction），这就是你看到的 50M 跌幅。
-
-**关闭监控后**
-
-<img width="384" height="180" alt="image" src="https://github.com/user-attachments/assets/60dec8ad-7d22-41f2-bf50-4faf7e00344c" />
-
-### sysctl.conf 调优后的内存分布 （压力测试后期-17小时后）
-```
-Page block order: 10
-Pages per block:  1024
-
-Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
-Node    0, zone   Normal, type    Unmovable     60    146    106      5      0      2      3      1      2      0      2
-Node    0, zone   Normal, type      Movable    207    170     53     16      2      3      1      1      2      1      4
-Node    0, zone   Normal, type  Reclaimable      5     17     35     11      0      0      0      0      0      1      0
-Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
-
-Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
-Node 0, zone   Normal           21           40            3            0
-```
-不同大小内存页依然有拆借，但此时，内核系统已明显出现了内存延迟（长期运行后SLAB缓存着色延迟）问题诱发 napi-workq 进程在处理洗包时变慢，硬中断DMA延迟，当BBR RTT感知到，又下调发包速率。不要动任何参数，BBR会自愈修复, 修复后的速率能在250M+撑几分钟，但又会回落 ，然后再反复，这就是真实水平。
-
-### sysctl.conf 调优后的内存分布 （压力测试后期-20小时后结束）
-
-```
-Page block order: 10
-Pages per block:  1024
-
-Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
-Node    0, zone   Normal, type    Unmovable    233    207    112      7      8     17      4      1      1      0      2
-Node    0, zone   Normal, type      Movable   1591   1102    617    281     90     48     18      4      1      3      4
-Node    0, zone   Normal, type  Reclaimable    285    172     75     43     11      4      1      0      0      1      0
-Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
-
-Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
-Node 0, zone   Normal           21           40            3            0
-```
-核心参数对比表：稳态 vs 结束我们可以清晰地看到系统是如何在压力消失后“喘息”的：
-指标 (Order) 压测中 (15H)压测后(20H+)
-Unmovable O3 11 7 释放了 4 个，说明驱动部分聚合帧缓存已归还。
-Unmovable O4-5 1/2 8/17 异常升高。说明小块碎片在压力释放后尝试向上合并，但卡在了中阶。
-Movable O0 152 1591 业务逻辑内存完全释放，系统转入静默。
-Order 10(Total) 6(2+4) 6(2+4)
-- 内核是稳定的： 没有 Panic，说明 SLAB 至少在逻辑链条上是完整的。
-- 效率是受损的： 这种“不完全合并”的状态，意味着系统的 算力天花板 已经因为内存延迟而永久下移了约 10%-15%。
+第二组数据（当前状态）显示系统成功避开了“内存管理死锁”。以下是深度定量拆解：
+  - 1. 结构性胜出：Unmovable（不可移动页）的“中阶加固”
+旧架构 (IRQ25 on CPU3): Order 4-10 的 Unmovable 计数几乎为 0。这说明驱动在 CPU3 上频繁申请 DMA 描述符时，由于伴随中断竞争，物理页被极度细碎化。
+新架构 (IRQ25 on CPU2): Order 4-5 的 Unmovable 计数高达 22/23。
+技术结论： 这是一个巨大的进步！这意味着在 CPU2 独占生产后，驱动申请连续物理页的过程变得极其“丝滑”。因为没有异核后勤任务抢占 CPU2，内核能够一次性分配出 Order 4/5 的连续页给驱动，而不需要频繁拆解。这直接保住了你 M3 聚合 的底气。
+  - 2. 关键防御力：Movable Order 3 的“蓄水池” (27 -> 127)
+定量对比： Movable 类型的 Order 3 块从 27 激增到了 127。
+物理意义： 这正是你锁定的 M3 聚合 (3 MSDU) 能否维持的核心。
+架构红利： 为什么现在多了这么多？因为 CPU3 专注做“后勤拼接”，它能不受中断干扰地将碎片拼成 Order 3。而在旧架构下，CPU3 处理中断时会不断打断拼接过程，导致 Order 3 还没生成就被拆散。这 127 个块就是你 20 小时压测不重启的“物理防火墙”。
+  - 3. “大块换小块”的消耗战：Order 10 的阴跌 (9 -> 7)
+变化： Movable 类型的 Order 10 (4MB) 块从 9 减少到了 7。
+解析： 你的速率下降和 CPU3 占用波动，正是因为系统在消耗大块资产。为了维持那 127 个 Order 3 块，内核拆掉了 2 个 4MB 的巨型块。
+风险判定： 只要 Order 10 还有 7 个，你就完全不需要担心 OOM（内存溢出）。系统目前处于“有钱（大块）但在慢慢花”的阶段，远未到山穷水尽。
+  - 4. 速率波动真相：Reclaimable（可回收页）的活跃
+数据： 第二组的 Reclaimable 在 Order 0-4 均有显著增加。
+深度逻辑： 这说明 VFS/Inode 缓存变得活跃。由于 iperf3 在用户态运行，它产生的系统调用会触碰这些页。
+结论： 速率下降是因为内核在处理这些 Reclaimable 页时，由于其分散在不同 Order，导致 TLB 寻址开销 变大。这证实了你的感知：速率没开始那么猛，但系统变稳了。
+**终极定性判据：架构升级的胜利**
+- 旧架构崩溃原因： Unmovable 几乎全碎在 Order 0-2。当 IRQ25 绑在 CPU3 时，CPU3 在处理中断的瞬间如果需要申请 Order 3，会发现全是碎片，被迫触发 direct_reclaim，进而导致 Spinlock 死锁 和 Watchdog 重启。
+- 新架构稳定原因： 你手动剥离了 CPU2，使得驱动申请 Unmovable 页时非常有秩序（保住了 Order 4/5）。同时 CPU3 能安心拼凑出 127 个 Movable Order 3。
+目前的内存健康度评级：优（A-）。
 
 ## iperf3 电脑端结束最终状态
 20小时结束后， iperf3的性能报告：
