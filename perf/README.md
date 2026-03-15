@@ -5,7 +5,7 @@
   - 基于2022年底版本加入几乎所有最新截止到2026年的官方patches(除MT7621不支持wed)，另，加入针对WIFI5网卡优化的AMSDU聚合max.3限制
 - 路由端 AP+CLIENT 5G 中继
 - 电脑端 WIFI 5G 网卡，Windows 11命令行: iperf3 -R -P 1 -w 1M -t 72000 按20小时不间断压测
-- 最新手工校正CPU各核的分工
+- 手工校正CPU各核的分工
   - CPU2: mt7915e rx接收中断 - NAPI 调度
   - CPU2: mt7915e-hif 处理 DMA 搬运 - 从环形缓冲区拿数据 
   - CPU2: 驱动级绑定 mt76-tx 处理发送逻辑 - 包聚合发送给电脑端 或上级ap
@@ -234,7 +234,7 @@ Node 0, zone   Normal           19           42            3            0
 
 ### sysctl.conf 两次不同调优后跑到中期的内存分布对比
 
-#### 压力测试中期-9小时后: IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on ```CPU3```
+#### BAD - *压力测试中期-9小时后: IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU3*
 
 ```
 Page block order: 10
@@ -250,7 +250,7 @@ Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           21           40            3            0
 ```
 
-#### 压力测试中期-11小时后: IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on ```CPU2```
+#### GOOD - 压力测试中期-11小时后: IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU2
 ```
 cat /proc/pagetypeinfo
 Page block order: 10
