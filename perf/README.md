@@ -46,8 +46,8 @@ Rx 数据接收 (DMA 搬运)：当 MT7915 硬件 Buffer 收到空中的无线包
 *CPU3 做什么*
 - 物理投递： 为了平衡指令发射带宽，内核会**自动**将该 Timer 任务投递到与CPU2共享 L1 Cache 的最邻近空闲 VPE（即 CPU3）。这样既利用了 CPU3 的空闲发射槽位，又保证了 Timer 访问 skb 数据时依然能从共享的 L1 Cache 中直接命中，不需要走 OCP 总线。
 - CPU 3 的 90% 高负载：主要是MT7621的GIC时钟高频调度切换产生的。 mt76-tx 是 “因”，CPU3 的 HRTIMER 爆发是 “果”。
- 
-## 深度指标分析：为何它们没排在最上面？
+
+## htop 深度指标分析：为何它们没排在最上面？
 <img src="https://github.com/simonchen/Openwrt-LEDE-Build/blob/main/perf/NAPI-poll-workers.png?raw=true" width="70%" height="70%">
 
 **12 小时、4.8 亿个包 冲锋下，MT7621 内部的核心权力结构**
