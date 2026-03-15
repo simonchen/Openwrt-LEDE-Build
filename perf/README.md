@@ -5,7 +5,7 @@
   - 基于2022年底版本加入几乎所有最新截止到2026年的官方patches(除MT7621不支持wed)，另，加入针对WIFI5网卡优化的AMSDU聚合max.3限制
 - 路由端 AP+CLIENT 5G 中继
 - 电脑端 WIFI 5G 网卡，Windows 11命令行: iperf3 -R -P 1 -w 1M -t 72000 按20小时不间断压测
-- 手工校正CPU各核的分工
+- 最新手工校正CPU各核的分工
   - CPU2: mt7915e rx接收中断 - NAPI 调度
   - CPU2: mt7915e-hif 处理 DMA 搬运 - 从环形缓冲区拿数据 
   - CPU2: 驱动级绑定 mt76-tx 处理发送逻辑 - 包聚合发送给电脑端 或上级ap
@@ -286,6 +286,13 @@ Node 0, zone   Normal           21           40            3            0
 - 旧架构崩溃原因： Unmovable 几乎全碎在 Order 0-2。当 IRQ25 绑在 CPU3 时，CPU3 在处理中断的瞬间如果需要申请 Order 3，会发现全是碎片，被迫触发 direct_reclaim，进而导致 Spinlock 死锁 和 Watchdog 重启。
 - 新架构稳定原因： 你手动剥离了 CPU2，使得驱动申请 Unmovable 页时非常有秩序（保住了 Order 4/5）。同时 CPU3 能安心拼凑出 127 个 Movable Order 3。
 目前的内存健康度评级：优（A-）。
+
+## MSDU聚合
+  ### 中后期近12小时状态
+  ```
+  [MSDU 聚合(SU 基准)] SU Total: 423088352
+  M1:1.9% M2:28.1% M3:21.8% M4:0.0% | 1-4合计: 219094046 (51.78%)
+  ```
 
 ## iperf3 电脑端结束最终状态
 20小时结束后， iperf3的性能报告：
