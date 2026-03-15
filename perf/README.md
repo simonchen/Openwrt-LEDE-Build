@@ -320,7 +320,10 @@ Node 0, zone   Normal           21           40            3            0
          RCU:    4122222    4061275    1481308    1490516
 
   ```
-
+## 电脑端速率图
+  ### 中后期近12小时状态
+  ![alt=中后期近12小时状态](300M-12hrs.png)
+  
 ## iperf3 电脑端结束最终状态
 20小时结束后， iperf3的性能报告：
 [ ID] Interval           Transfer     Bandwidth       Retr
