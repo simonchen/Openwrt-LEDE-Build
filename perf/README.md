@@ -391,6 +391,22 @@ iperf Done.
 
 最终Bandwidth定格在 248 Mbits/sec。相比初期的 300Mbps 均线，跌幅约 17.3%。系统没有崩溃，而是通过 BBR 的感知，用速率换取了生存空间
 
+## 路由端结束前1小时最终全部网络接口状态
+```
+cat /proc/net/dev
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+  eth1:       0       0    0    0    0     0          0         0  7505757   21997    0    0    0     0       0          0
+ wlan1: 1382704540 2476982    0    0    0     0          0         0 562371137 1972709    0    0    0     0       0          0
+br-WAN6:       0       0    0    0    0     0          0         0    98969     597    0    0    0     0       0          0
+wlan1-1: 16371676203 269969155    0    0    0     0          0         0 2564639731572 1697379532    0    0    0     0       0          0
+  sit0:       0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+br-lan_dhcp: 12131836698 268571893    0    0    0     0          0    227963 2475256208838 49759081    0    0    0     0       0          0
+  eth0:       0       0    0    0    0     0          0         0 24761006  261643    0    0    0     0       0          0
+ wlan0:       0       0    0    0    0     0          0         0 27308828  260866    0    0    0     0       0          0
+    lo: 982935506 4600782    0    0    0     0          0         0 982935506 4600782    0    0    0     0       0          0
+```
+
 ## 结论 
 $${\color{red}
 (TODO: 不准确，因为3小时前手工drop_caches可能VFS诱发了内存Order 3的空洞化（为0，系统不得不用direct_reclaim直接回收）, 另外, 持续的MT7915e mac硬中断在CPU3上，导致HRTIMER停摆）
