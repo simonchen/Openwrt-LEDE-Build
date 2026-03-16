@@ -356,6 +356,21 @@ net.ipv4.tcp_wmem = 4096 65536 8388608
    SLAB 关键内存池 (Active/Total)
     skbuff_fclone_cache: 165/210        skbuff_head_cache : 1182/2562
   ```
+  - ### 结束时的内存页分布
+  ```
+  cat /proc/pagetypeinfo
+  Page block order: 10
+  Pages per block:  1024
+  
+  Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+  Node    0, zone   Normal, type    Unmovable    239    202    181      2     17     16      5      1      0      0      0
+  Node    0, zone   Normal, type      Movable   2108   1209    651    277     70     51     16      9      4      5      3
+  Node    0, zone   Normal, type  Reclaimable    222    177     93     47     25      9      1      1      0      0      0
+  Node    0, zone   Normal, type   HighAtomic     12     14     18     27     14      5      0      0      0      0      0
+  
+  Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+  Node 0, zone   Normal           19           41            3            1
+  ```
 
 ## MSDU聚合
   - ### 中后期近12小时状态
@@ -419,24 +434,41 @@ net.ipv4.tcp_wmem = 4096 65536 8388608
      HRTIMER:     324786     325178      23788    5890763
          RCU:    6750715    6694297    2343834    2378453
   ```
+  - ### 结束时的状态
+  ```
+  cat /proc/softirqs
+                    CPU0       CPU1       CPU2       CPU3
+          HI:          0          0          0          0
+       TIMER:    7376939    7279636    7679626    7649729
+      NET_TX:          0          3      15594          7
+      NET_RX:    1400068    1248471    2468433     620378
+       BLOCK:          0          0          0          0
+    IRQ_POLL:          0          0          0          0
+     TASKLET:   56226584   56511345   70963890        395
+       SCHED:    6291182    6290388    7569311    2167823
+     HRTIMER:     354347     353869      27407    6598831
+         RCU:    7521267    7478442    2593387    2636829
+  ```
 
 ## 电脑端速率图
   - ### 中后期近12小时状态
   ![alt=中后期近12小时状态](300M-12hrs.png)
   - ### 后期近18小时的状态
   <img alt=中后期近18小时状态 width=471 height=226 src="300M-19hrs.png" />
-  - ### 结束前30分钟的一次几乎停摆，利用HighAtomic块的起死回生
+  - ### 结束前30分钟的一次几乎停摆，可能利用内存紧急HighAtomic块的起死回生， 同时证明了架构的韧性!
   ![alt=中后期近20小时惊险状态](300M-close-to-20h.png)
   
 ## iperf3 电脑端结束最终状态
 20小时结束后， iperf3的性能报告：
+```
 [ ID] Interval           Transfer     Bandwidth       Retr
-[  5]   0.00-72000.00 sec  0.00 %v絪   248 Mbits/sec  166360             sender
-[  5]   0.00-72000.00 sec  0.00 %v絪   248 Mbits/sec                  receiver
+[  5]   0.00-72000.00 sec  0.00 %v絪   279 Mbits/sec  181280             sender
+[  5]   0.00-72000.00 sec  0.00 %v絪   279 Mbits/sec                  receiver
 
 iperf Done.
+```
 
-最终Bandwidth定格在 248 Mbits/sec。相比初期的 300Mbps 均线，跌幅约 17.3%。系统没有崩溃，而是通过 BBR 的感知，用速率换取了生存空间
+最终Bandwidth定格在 279 Mbits/sec。相比初期的 300Mbps 均线，跌幅约 7%。系统没有崩溃!
 
 ## 路由端结束前1小时最终全部网络接口状态
 ```
@@ -454,11 +486,3 @@ br-lan_dhcp: 12131836698 268571893    0    0    0     0          0    227963 247
     lo: 982935506 4600782    0    0    0     0          0         0 982935506 4600782    0    0    0     0       0          0
 ```
 
-## 结论 
-$${\color{red}
-(TODO: 不准确，因为3小时前手工drop_caches可能VFS诱发了内存Order 3的空洞化（为0，系统不得不用direct_reclaim直接回收）, 另外, 持续的MT7915e mac硬中断在CPU3上，导致HRTIMER停摆）
-}$$
-实验结论：SLAB 的“带病生存”模型
-这次压测证明了一个关键结论：在嵌入式 Linux 网络调优中，内存分配的老化确实会导致“算力贬值”，但只要拥塞控制算法（BBR）足够灵敏，且人为压低了发送窗口（notsent_lowat），**系统可以进入一种“性能衰减但逻辑稳态”的长效运行模式**。
-
-**20小时压测结束后，实际又做了两次相同iperf3参数，但只有60秒的测试，第一次无法达到200M+平均水平，第二次能到250M+平均值。**
