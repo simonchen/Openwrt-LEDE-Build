@@ -483,6 +483,7 @@ iperf Done.
 ```
 
 最终Bandwidth定格在 279 Mbits/sec。相比初期的 300Mbps 均线，跌幅约 7%。
+[全部log下载](stress_test_20h.log)
 
 ## 路由端结束最终状态
   系统没有崩溃! 可用内存迅速回升至103MB, 各CPU核的占用率迅速下降到个位数(百分比)
