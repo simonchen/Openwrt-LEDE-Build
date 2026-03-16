@@ -379,7 +379,7 @@ Node 0, zone   Normal           21           40            3            0
   ### 中后期近12小时状态
   ![alt=中后期近12小时状态](300M-12hrs.png)
   ### 后期近18小时的状态
-  ![alt=中后期近18小时状态](300M-19hrs.png)
+  <img alt=中后期近18小时状态 width=471 height=226 src="300M-19hrs.png" />
   
 ## iperf3 电脑端结束最终状态
 20小时结束后， iperf3的性能报告：
