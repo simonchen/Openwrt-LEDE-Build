@@ -470,7 +470,7 @@ net.ipv4.tcp_wmem = 4096 65536 8388608
   - ### 后期近18小时的状态
   <img alt=中后期近18小时状态 width=471 height=226 src="300M-19hrs.png" />
   - ### 结束前30分钟的一次几乎停摆，可能利用内存紧急HighAtomic块的起死回生， 同时证明了架构的韧性!
-  ![alt=中后期近20小时惊险状态](300M-close-to-20h.jpg)
+  <img alt=中后期近20小时惊险状态 src="300M-close-to-20h.jpg" />
   
 ## iperf3 电脑端结束最终状态
 20小时结束后， iperf3的性能报告：
