@@ -327,16 +327,17 @@ Node    0, zone   Normal, type   HighAtomic     11     13     18     27     14  
 Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
 Node 0, zone   Normal           19           41            3            1
 ```
-在前18个小时的高压下，Movable 区域的“结构性重组” 对比之前的 pagetypeinfo，这组数据展现了惊人的变化：
+**在前18个小时的高压下，Movable 区域的“结构性重组” 对比之前的 pagetypeinfo，这组数据展现了惊人的变化：**
 - Order 3 (Movable) 激增： 从之前的 8 暴涨到 160。
 - Order 5-9 (Movable) 全线飘红： Order 9 从 1 涨到了 5，Order 8 从 1 涨到了 4。
 - 代价： Order 10 (Movable) 从 4 掉到了 3。
-- 物理结论： 内核刚刚执行了一次极其高效的 Lumpy Reclaim (块状回收)。它牺牲了 1 个 4MB 的巨型块（Order 10），将其精准地粉碎并重新填补到了 Order 3-9 所有的中高阶空位中。这就是为什么你现在拥有了 75MB 空闲内存，且 M3 聚合度回升至 20.0% 的原因。
-```
+- 物理结论：
+  **内核刚刚执行了一次极其高效的 Lumpy Reclaim (块状回收)。它牺牲了 1 个 4MB 的巨型块（Order 10），将其精准地粉碎并重新填补到了 Order 3-9 所有的中高阶空位中。这就是为什么你现在拥有了 75MB 空闲内存，且 M3 聚合度回升至 20.0% 的原因。**
 - 此时空闲内存: 75.04 MB （在前18个小时结束时，空闲内存一直被挤压在40~50MB或更低位一点)
-- SLAB 解熵效应： 内核判定这部分 Slab 页面已经过度碎片化且利用率低，强行回收了这些 Page 并归还给 Buddy System。这释放了大量的连续物理空间，直接促成了上面提到的 Movable 中高阶页面的大幅回升。
+- SLAB 解熵效应：
+  内核判定这部分 Slab 页面已经过度碎片化且利用率低，强行回收了这些 Page 并归还给 Buddy System。这释放了大量的连续物理空间，直接促成了上面提到的 Movable 中高阶页面的大幅回升。
 ```
- [SLAB 关键内存池 (Active/Total)]
+ SLAB 关键内存池 (Active/Total)
   skbuff_fclone_cache: 165/210        skbuff_head_cache : 1182/2562
 ```
 
