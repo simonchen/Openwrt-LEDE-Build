@@ -287,12 +287,43 @@ Node 0, zone   Normal           21           40            3            0
 - 新架构稳定原因： 你手动剥离了 CPU2，使得驱动申请 Unmovable 页时非常有秩序（保住了 Order 4/5）。同时 CPU3 能安心拼凑出 127 个 Movable Order 3。
 目前的内存健康度评级：优（A-）。
 
+### sysctl.conf 调优后跑到后期19小时的内存分布
+```
+ cat /proc/pagetypeinfo
+Page block order: 10
+Pages per block:  1024
+
+Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+Node    0, zone   Normal, type    Unmovable     50    113    193      7     19     24      5      1      0      0      1
+Node    0, zone   Normal, type      Movable      6     17     14      8      0      2      0      1      1      1      5
+Node    0, zone   Normal, type  Reclaimable     18     74     49     27     10      2      0      1      0      0      0
+Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+
+Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+Node 0, zone   Normal           21           40            3            0
+```
+- 物理内存的“枯竭临界点” (Order 4-6 Movable: 0)
+  - 定量警讯： Movable 区域的 Order 4, 6 已经彻底归零，Order 3 从之前的 33 暴跌至 8。
+  - 物理现状： 你的“战略储备”已经从大额钞票变成了零钱。目前系统手里只剩下 8 个 Order 3 块。
+    为何没崩？ 关键在于 Movable 的 Order 8, 9, 10 (1/1/5)。
+    系统目前全靠拆解这最后 5 个 Order 10 (4MB) 的巨型页来给驱动供血。一旦这 5 个大块被拆完，聚合度将发生断崖式下跌。
+- Unmovable（不可移动区）的“逆势稳健”
+  - 观察点： 在全系统内存告急时，Unmovable 的 Order 4/5 (19/24) 依然极度健康。
+  - 深度解读： 这再次印证了你 CPU2 绑核 的神级效果。即使 Movable 区已经碎成了渣，驱动申请 DMA 关键内存的路径依然是隔离保护的。
+  - 系统生命线： 只要 Unmovable 不碎，网卡就不会丢包，链路就不会重置。这是你挺过 19 小时且 0 Drop 的物理基础。
+
 ## MSDU聚合
   ### 中后期近12小时状态
   ```
   [MSDU 聚合(SU 基准)] SU Total: 423088352
   M1:1.9% M2:28.1% M3:21.8% M4:0.0% | 1-4合计: 219094046 (51.78%)
   ```
+  ### 后期19小时状态
+  ```
+  [MSDU 聚合(SU 基准)] SU Total: 707051407
+  M1:2.0% M2:31.1% M3:19.5% M4:0.0% | 1-4合计: 371497175 (52.54%)
+  ```
+
 ## softnet 统计
   ### 中后期近12小时状态
   ```
@@ -301,6 +332,9 @@ Node 0, zone   Normal           21           40            3            0
   CPU1  | 157455483  (+4131 ) | 0          (+0    ) | 0          (+0    ) | 29793      (+0    )
   CPU2  | 1401248    (+19   ) | 0          (+0    ) | 0          (+0    ) | 35852      (+0    )
   CPU3  | 459979     (+8    ) | 0          (+0    ) | 0          (+0    ) | 36935      (+0    )
+  ```
+  ```
+  
   ```
 
 ## softirqs 统计
@@ -320,6 +354,22 @@ Node 0, zone   Normal           21           40            3            0
          RCU:    4122222    4061275    1481308    1490516
 
   ```
+  ### 后期19小时的状态
+  ```
+  cat /proc/softirqs
+                    CPU0       CPU1       CPU2       CPU3
+          HI:          0          0          0          0
+       TIMER:    6622347    6533390    6864941    6838903
+      NET_TX:          0          3      13940          7
+      NET_RX:    1251212    1112877    2183724     557379
+       BLOCK:          0          0          0          0
+    IRQ_POLL:          0          0          0          0
+     TASKLET:   50336077   50592985   63366296        387
+       SCHED:    5675756    5674716    6775500    1956676
+     HRTIMER:     324786     325178      23788    5890763
+         RCU:    6750715    6694297    2343834    2378453
+  ```
+
 ## 电脑端速率图
   ### 中后期近12小时状态
   ![alt=中后期近12小时状态](300M-12hrs.png)
