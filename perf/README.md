@@ -51,29 +51,29 @@ Windows 系统： 默认通常在 64 KB 左右，虽然 Windows 也有 Receive W
 ## htop 深度指标分析：为何它们没排在最上面？
 <img src="https://github.com/simonchen/Openwrt-LEDE-Build/blob/main/perf/NAPI-poll-workers.png?raw=true" width="70%" height="70%">
 
-**12 小时、4.8 亿个包 冲锋下，MT7621 内部的核心权力结构**
-在 htop 默认按 CPU% 排序时，它们没排在最上面是因为：
-多核分摊 (Total vs Per-CPU)：你现在的 iperf3 在 CPU 0/1 上跑，合并占用可能达到 90%+，所以它稳居第一。
-kworker 的瞬时性：注意看图中 kworker/u9:1+napi_workq 的占用（29.3%）。这验证了你之前的直觉：它们非常忙，但它们是异步的。
-关键点：mt76-tx phy0 赫然在目（41.5%），这证明了你锁定在 CPU 2 的发包流水线正在全速运转。
-
-## 截图中的进程及其意义
-mt76-tx phy0 (41.5%)：发包核心。它在 CPU 2 上以极高的优先级运行。
-kworker/u9:1+napi_workq (29.3%)：清理核心。它正在疯狂处理 Core 1 留下的 NAPI 尾随任务。
-kworker/u9:0 (28.0%)：后勤核心。它在帮 Core 0 消化那庞大的应用层（iperf3）数据产生的 RCU 回调。
-ksoftirqd/3 (0.6%)：奇迹指标。即便系统如此忙碌，软中断进程占用几乎为零！这实锤了 RPS=0 的威力——所有的洗包都在中断上下文完成了，根本没溢出到进程层。
-
-CPU 2 MT7915 硬中断(rx, RPS=0)：在前线拼命收割（NAPI）。
-
-u9:1+napi_workq：在后方打扫战场（洗包）。
-
-CPU 2 (mt76-tx)：在隔壁全速发车（DMA 填包）。
-
-migration/2：在门口站岗，确保没人敢乱闯 CPU 2 的领地。
-
-Softnet >Squeeze 始终为０ (５亿包处理）
-
-这套“影子政府”般的内核架构，是 MT7621 冲击 300M+ 稳态的终极秘密。
+  - ### 12 小时、4.8 亿个包 冲锋下，MT7621 内部的核心权力结构
+  在 htop 默认按 CPU% 排序时，它们没排在最上面是因为：
+  多核分摊 (Total vs Per-CPU)：你现在的 iperf3 在 CPU 0/1 上跑，合并占用可能达到 90%+，所以它稳居第一。
+  kworker 的瞬时性：注意看图中 kworker/u9:1+napi_workq 的占用（29.3%）。这验证了你之前的直觉：它们非常忙，但它们是异步的。
+  关键点：mt76-tx phy0 赫然在目（41.5%），这证明了你锁定在 CPU 2 的发包流水线正在全速运转。
+  
+  - ### 截图中的进程及其意义
+  mt76-tx phy0 (41.5%)：发包核心。它在 CPU 2 上以极高的优先级运行。
+  kworker/u9:1+napi_workq (29.3%)：清理核心。它正在疯狂处理 Core 1 留下的 NAPI 尾随任务。
+  kworker/u9:0 (28.0%)：后勤核心。它在帮 Core 0 消化那庞大的应用层（iperf3）数据产生的 RCU 回调。
+  ksoftirqd/3 (0.6%)：奇迹指标。即便系统如此忙碌，软中断进程占用几乎为零！这实锤了 RPS=0 的威力——所有的洗包都在中断上下文完成了，根本没溢出到进程层。
+  
+  CPU 2 MT7915 硬中断(rx, RPS=0)：在前线拼命收割（NAPI）。
+  
+  u9:1+napi_workq：在后方打扫战场（洗包）。
+  
+  CPU 2 (mt76-tx)：在隔壁全速发车（DMA 填包）。
+  
+  migration/2：在门口站岗，确保没人敢乱闯 CPU 2 的领地。
+  
+  Softnet >Squeeze 始终为０ (５亿包处理）
+  
+  这套“影子政府”般的内核架构，是 MT7621 冲击 300M+ 稳态的终极秘密。
 
 ## Sysctl.conf 深度调优（针对BBR算法的内存管理和延迟计算方法）
 - net.ipv4.tcp_notsent_lowat = 1048576
@@ -130,217 +130,219 @@ net.ipv4.tcp_wmem = 4096 65536 8388608
 ```
 
 ## /proc/pagetypeinfo 中的奥秘, BBR vs. CUBIC
-### 架构调优前的内存分布 (15小时高压测试后)
-```
-cat /proc/pagetypeinfo
-Page block order: 10
-Pages per block: 1024
-
-Free pages count per migrate type at order 0 1 2 3 4 5 6 7 8 9 10
-
-Node 0, zone Normal, type Unmovable 9 40 42 2 11 4 0 2 1 1 3
-
-Node 0, zone Normal, type Movable 71 461 316 97 33 6 3 2 2 1 4
-
-Node 0, zone Normal, type Reclaimable 3 1 20 3 1 0 1 0 0 1 0
-
-Node 0, zone Normal, type HighAtomic 0 0 0 0 0 0 0 0 0 0 0
-
-Number of blocks type Unmovable Movable Reclaimable HighAtomic
-
-Node 0, zone Normal 22 39 3 0
-```
-- 核心危机：高阶连续页（High-Order Pages）几乎耗尽
-Order 5-9 的枯竭：看 Movable（可移动）这一行，从 Order 5 开始，可用块仅剩个位数（6, 3, 2, 2, 1）。
-后果：在 MSDU=3 的聚合下，驱动层和网络协议栈申请大块连续内存（例如用于接收环形缓冲区的 kmalloc）时，内核已经找不到现成的连续物理页了。
-连锁反应：此时内核会频繁触发 Lumpy Reclaim（碎片整理），这会直接抢占 CPU0/1 的周期，导致你观察到的 Load 4.91 居高不下。
-
-- 关键瓶颈：Unmovable（不可移动）页的分布
-分析：Unmovable 在 Order 10 还有 3 个块，但在 Order 6-7 却是 0 或 2。
-风险：内核的核心组件（如驱动申请的 DMA 内存）通常申请 Unmovable 内存。如果 Order 6/7 彻底断流，一旦驱动尝试重新初始化或申请新的 Buffer，系统会直接卡死或报 page allocation failure。
-
-- Reclaimable（可回收）几乎为零
-分析：这一行全是 0, 1, 3 这样的小数。
-解读：这说明你的 vfs_cache_pressure（文件缓存压力）已经把磁盘缓存挤压到了极致，内存中几乎没有任何可以轻易置换出来的“软空间”了。现在的 56MB 空闲内存全是实打实的“死钱”，腾挪空间极小。
-
-- HighAtomic（紧急备用金）为零
-解读：HighAtomic 这一行全 0 是最危险的信号。在网络高压下，当普通申请失败时，内核会尝试从这个“紧急池”里拿内存。现在这里没钱了，意味着下一次大包申请一旦失败，就是直接丢包（BA MISS 爆发）或进程挂起。
-
-### 某次用 ``` echo 1 > /proc/sys/vm/compact_memory ```紧缩内存后
-```
-cat /proc/pagetypeinfo
-Page block order: 10
-Pages per block:  1024
-
-Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
-Node    0, zone   Normal, type    Unmovable     45     77     67      9      5      3      3      1      3      0      3
-Node    0, zone   Normal, type      Movable     11     15      4      3      2      1      1     12     11      7      9
-Node    0, zone   Normal, type  Reclaimable     17     40     31      6      1      0      1      0      0      1      0
-Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
-
-Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
-Node 0, zone   Normal           22           39            3            0
-```
-Movable区域，虽有改善可连续order 10 (4MB) 内存块数增多，但是，order 0 数字很小，表明skb内存不释放，可能长期被占据。
-- 元凶是系统默认 ```net.ipv4.tcp_notsent_lowat=4294967295```
-**1. 为什么这个参数会“吃掉”你的 Order-0 内存？**
-内存堆积机制：BBR 为了探测带宽，会尽可能多地把数据包塞进发送缓冲区。当 ```tcp_notsent_lowat``` 无限制时，内核会允许 BBR 在内存中积压海量尚未发出的 sk_buff（每个包都占用大量的 Unmovable 和 Order-0 内存）。
-碎片化诱因：这几百兆的“待发包”会瞬间占满 SLAB 分配器。当驱动（mt76 on IRQ25 CPU3）急需一个内存描述符来处理收到的 ACK 时，发现内存全被这些“还没发出去的包”占满了，于是触发 direct reclaim（直接回收）。
-后果：这就是你看到的 Order-0 瞬间枯竭，CPU3 随即陷入“搬运这些无意义积压包”的无效劳动中，最终导致崩溃。
-**2. 为什么它会让 BBR “逻辑混乱”？**
-缓冲区膨胀 (Bufferbloat)：大量数据堆积在本地内存而非物理链路中，会导致 RTT 采样包含了“在内核排队的时间”。
-伪延迟：BBR 采样到了这个由于“内存挤压”产生的延迟，误以为是网络拥塞，于是触发了那个 300秒的长记忆减速循环。
-
-### BBR 算法特性 与 Linux 内存紧缩 (Compaction) 之间的底层冲突
-简单来说：Cubic 是“盲目灌包型”，而 BBR 是“高精度测量型”。在内存紧缩这种极其耗费 CPU 指令周期的动作面前，两者的反应截然不同。
-
-**1. 为什么 Cubic 跑着没事？**
-
-- Cubic 的逻辑极其简单：只要没丢包，我就按窗口曲线加压。
-- 抗抖动性强：当执行 compact_memory 时，CPU 会瞬间被抢占去搬运物理页。Cubic 的发包节奏虽然会卡顿几毫秒，但它不依赖高精度的 RTT（往返时间）测量。
-- 不敏感：搬运内存导致的系统微小延迟（Jitter），对 Cubic 来说只是“发包慢了一点点”，等内存搬完了，它继续按部就班发包，不会产生逻辑混乱。
-
-**2. 为什么 BBR 切换回来就容易出问题？**
-
-- BBR 的核心是基于 RTprop (最小往返时间) 和 BtlBw (瓶颈带宽) 的实时建模。
-- RTT 采样污染：compact_memory 会导致内核进入 "Stop the World" 级别的瞬间卡顿。如果 BBR 在这一瞬间采样 RTT，会抓到一个巨大的延迟毛刺。
-- BDP 计算崩溃：BBR 根据采样到的 RTT 计算 BDP (带宽延迟积)。由于内存搬运导致的瞬时延迟，BBR 可能误判链路发生了严重拥塞，从而大幅下调发送速率。
-- CPU3 连锁反应：BBR 试图通过 Pacing（平滑发包）来控制速率。如果此时 CPU3 正忙于内存紧缩后的 NAPI 恢复，而 BBR 又因为采样错误发送了不规律的探测包，两者冲突极易导致 Soft Lockup (软锁死)。
-- 上下文切换开销：从 Cubic 切换到 BBR 本身就需要重新初始化内核的拥塞控制状态机。在内存极度碎片化（正在紧缩）时切换，会导致内核在分配 BBR 所需的监控结构体时触发 Atomic Allocation Failure。
+  ### 架构调优前的内存分布 (15小时高压测试后)
+  ```
+  cat /proc/pagetypeinfo
+  Page block order: 10
+  Pages per block: 1024
   
-**3. 底层机制：BBR 是“手术刀”，Cubic 是“大锤”**
+  Free pages count per migrate type at order 0 1 2 3 4 5 6 7 8 9 10
+  
+  Node 0, zone Normal, type Unmovable 9 40 42 2 11 4 0 2 1 1 3
+  
+  Node 0, zone Normal, type Movable 71 461 316 97 33 6 3 2 2 1 4
+  
+  Node 0, zone Normal, type Reclaimable 3 1 20 3 1 0 1 0 0 1 0
+  
+  Node 0, zone Normal, type HighAtomic 0 0 0 0 0 0 0 0 0 0 0
+  
+  Number of blocks type Unmovable Movable Reclaimable HighAtomic
+  
+  Node 0, zone Normal 22 39 3 0
+  ```
+  - 核心危机：高阶连续页（High-Order Pages）几乎耗尽
+  Order 5-9 的枯竭：看 Movable（可移动）这一行，从 Order 5 开始，可用块仅剩个位数（6, 3, 2, 2, 1）。
+  后果：在 MSDU=3 的聚合下，驱动层和网络协议栈申请大块连续内存（例如用于接收环形缓冲区的 kmalloc）时，内核已经找不到现成的连续物理页了。
+  连锁反应：此时内核会频繁触发 Lumpy Reclaim（碎片整理），这会直接抢占 CPU0/1 的周期，导致你观察到的 Load 4.91 居高不下。
+  
+  - 关键瓶颈：Unmovable（不可移动）页的分布
+  分析：Unmovable 在 Order 10 还有 3 个块，但在 Order 6-7 却是 0 或 2。
+  风险：内核的核心组件（如驱动申请的 DMA 内存）通常申请 Unmovable 内存。如果 Order 6/7 彻底断流，一旦驱动尝试重新初始化或申请新的 Buffer，系统会直接卡死或报 page allocation failure。
+  
+  - Reclaimable（可回收）几乎为零
+  分析：这一行全是 0, 1, 3 这样的小数。
+  解读：这说明你的 vfs_cache_pressure（文件缓存压力）已经把磁盘缓存挤压到了极致，内存中几乎没有任何可以轻易置换出来的“软空间”了。现在的 56MB 空闲内存全是实打实的“死钱”，腾挪空间极小。
+  
+  - HighAtomic（紧急备用金）为零
+  解读：HighAtomic 这一行全 0 是最危险的信号。在网络高压下，当普通申请失败时，内核会尝试从这个“紧急池”里拿内存。现在这里没钱了，意味着下一次大包申请一旦失败，就是直接丢包（BA MISS 爆发）或进程挂起。
+  
+  ### 某次用 ``` echo 1 > /proc/sys/vm/compact_memory ```紧缩内存后
+  ```
+  cat /proc/pagetypeinfo
+  Page block order: 10
+  Pages per block:  1024
+  
+  Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+  Node    0, zone   Normal, type    Unmovable     45     77     67      9      5      3      3      1      3      0      3
+  Node    0, zone   Normal, type      Movable     11     15      4      3      2      1      1     12     11      7      9
+  Node    0, zone   Normal, type  Reclaimable     17     40     31      6      1      0      1      0      0      1      0
+  Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+  
+  Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+  Node 0, zone   Normal           22           39            3            0
+  ```
+  Movable区域，虽有改善可连续order 10 (4MB) 内存块数增多，但是，order 0 数字很小，表明skb内存不释放，可能长期被占据。
+  - 元凶是系统默认 ```net.ipv4.tcp_notsent_lowat=4294967295```
+  **1. 为什么这个参数会“吃掉”你的 Order-0 内存？**
+  内存堆积机制：BBR 为了探测带宽，会尽可能多地把数据包塞进发送缓冲区。当 ```tcp_notsent_lowat``` 无限制时，内核会允许 BBR 在内存中积压海量尚未发出的 sk_buff（每个包都占用大量的 Unmovable 和 Order-0 内存）。
+  碎片化诱因：这几百兆的“待发包”会瞬间占满 SLAB 分配器。当驱动（mt76 on IRQ25 CPU3）急需一个内存描述符来处理收到的 ACK 时，发现内存全被这些“还没发出去的包”占满了，于是触发 direct reclaim（直接回收）。
+  后果：这就是你看到的 Order-0 瞬间枯竭，CPU3 随即陷入“搬运这些无意义积压包”的无效劳动中，最终导致崩溃。
+  **2. 为什么它会让 BBR “逻辑混乱”？**
+  缓冲区膨胀 (Bufferbloat)：大量数据堆积在本地内存而非物理链路中，会导致 RTT 采样包含了“在内核排队的时间”。
+  伪延迟：BBR 采样到了这个由于“内存挤压”产生的延迟，误以为是网络拥塞，于是触发了那个 300秒的长记忆减速循环。
+  
+  ### BBR 算法特性 与 Linux 内存紧缩 (Compaction) 之间的底层冲突
+  简单来说：Cubic 是“盲目灌包型”，而 BBR 是“高精度测量型”。在内存紧缩这种极其耗费 CPU 指令周期的动作面前，两者的反应截然不同。
+  
+  **1. 为什么 Cubic 跑着没事？**
+  
+  - Cubic 的逻辑极其简单：只要没丢包，我就按窗口曲线加压。
+  - 抗抖动性强：当执行 compact_memory 时，CPU 会瞬间被抢占去搬运物理页。Cubic 的发包节奏虽然会卡顿几毫秒，但它不依赖高精度的 RTT（往返时间）测量。
+  - 不敏感：搬运内存导致的系统微小延迟（Jitter），对 Cubic 来说只是“发包慢了一点点”，等内存搬完了，它继续按部就班发包，不会产生逻辑混乱。
+  
+  **2. 为什么 BBR 切换回来就容易出问题？**
+  
+  - BBR 的核心是基于 RTprop (最小往返时间) 和 BtlBw (瓶颈带宽) 的实时建模。
+  - RTT 采样污染：compact_memory 会导致内核进入 "Stop the World" 级别的瞬间卡顿。如果 BBR 在这一瞬间采样 RTT，会抓到一个巨大的延迟毛刺。
+  - BDP 计算崩溃：BBR 根据采样到的 RTT 计算 BDP (带宽延迟积)。由于内存搬运导致的瞬时延迟，BBR 可能误判链路发生了严重拥塞，从而大幅下调发送速率。
+  - CPU3 连锁反应：BBR 试图通过 Pacing（平滑发包）来控制速率。如果此时 CPU3 正忙于内存紧缩后的 NAPI 恢复，而 BBR 又因为采样错误发送了不规律的探测包，两者冲突极易导致 Soft Lockup (软锁死)。
+  - 上下文切换开销：从 Cubic 切换到 BBR 本身就需要重新初始化内核的拥塞控制状态机。在内存极度碎片化（正在紧缩）时切换，会导致内核在分配 BBR 所需的监控结构体时触发 Atomic Allocation Failure。
+    
+  **3. 底层机制：BBR 是“手术刀”，Cubic 是“大锤”**
+  
+  - Cubic：像大锤，系统抖一下，它只是停一下。
+  - BBR：像手术刀，必须在微秒级精度下操作。compact_memory 这种“搬家”动作会让手术台剧烈晃动，BBR 的算法模型会立即崩坏，表现出来就是流量断流甚至驱动层 Kernel Panic。
 
-- Cubic：像大锤，系统抖一下，它只是停一下。
-- BBR：像手术刀，必须在微秒级精度下操作。compact_memory 这种“搬家”动作会让手术台剧烈晃动，BBR 的算法模型会立即崩坏，表现出来就是流量断流甚至驱动层 Kernel Panic。
+## 架构调优后的内存分布 
 
-### 架构调优后的内存分布 (压力测试 运行初期1~2小时）
-```
-cat /proc/pagetypeinfo
-Page block order: 10
-Pages per block:  1024
+  ### 压力测试 运行初期1~2小时
+  ```
+  cat /proc/pagetypeinfo
+  Page block order: 10
+  Pages per block:  1024
+  
+  Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+  Node    0, zone   Normal, type    Unmovable    129    161    138     12      3      0      2      0      1      1      0
+  Node    0, zone   Normal, type      Movable    347    451    204     50     10      1      1      1      1      0     12
+  Node    0, zone   Normal, type  Reclaimable     12     53     36     11      0      0      0      0      0      1      0
+  Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+  
+  Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+  Node 0, zone   Normal           19           42            3            0
+  ```
+  连续 Movable 4MB (order 10) 内存有12个， order 0 有347个， 表明回收顺畅，可用大块内存充足，系统适合长跑。
+  长跑过程中，如有发现order 0不释放，内存又需要再分配(skb都是小包压在order 0-4)，可向其它order 5-9申请，除非order 5-9耗尽，
+  但只要order 10仍有盈余，就能保证系统长跑时间，这是回收、再分配内存的闭环，需要syctl.conf对net.core / net.ipv4中对包管理的优化才能达到，
+  默认内核系统给的值都是针对大内存GB以上的默认值，不适合GB以下MB的小内存。
 
-Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
-Node    0, zone   Normal, type    Unmovable    129    161    138     12      3      0      2      0      1      1      0
-Node    0, zone   Normal, type      Movable    347    451    204     50     10      1      1      1      1      0     12
-Node    0, zone   Normal, type  Reclaimable     12     53     36     11      0      0      0      0      0      1      0
-Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+  ### 两次不同架构调优后跑到中期的内存分布对比
+  
+    #### BAD - *压力测试中期-9小时后: IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU3*
+    
+    ```
+    Page block order: 10
+    Pages per block:  1024
+    
+    Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+    Node    0, zone   Normal, type    Unmovable    122    145     88     31      3      0      1      0      1      1      2
+    Node    0, zone   Normal, type      Movable      5     13     14     27     16      8      4      3      0      0      9
+    Node    0, zone   Normal, type  Reclaimable     17     39     35     11      0      0      0      0      0      1      0
+    Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+    
+    Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+    Node 0, zone   Normal           21           40            3            0
+    ```
+    
+    #### GOOD - 压力测试中期-11小时后: IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU2
+    ```
+    cat /proc/pagetypeinfo
+    Page block order: 10
+    Pages per block:  1024
+    
+    Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+    Node    0, zone   Normal, type    Unmovable     92    207    195     28     22     23      5      1      0      0      1
+    Node    0, zone   Normal, type      Movable     54     23     15    127     50      1      0      0      0      1      7
+    Node    0, zone   Normal, type  Reclaimable     39     76     49     27     10      2      0      1      0      0      0
+    Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+    
+    Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+    Node 0, zone   Normal           21           40            3            0
+    ```
+    #### 第二组数据（当前状态）显示系统成功避开了“内存管理死锁”。以下是深度定量拆解：
+      - 1. 结构性胜出：Unmovable（不可移动页）的“中阶加固”
+    旧架构 (IRQ25 on CPU3): Order 4-10 的 Unmovable 计数几乎为 0。这说明驱动在 CPU3 上频繁申请 DMA 描述符时，由于伴随中断竞争，物理页被极度细碎化。
+    新架构 (IRQ25 on CPU2): Order 4-5 的 Unmovable 计数高达 22/23。
+    技术结论： 这是一个巨大的进步！这意味着在 CPU2 独占生产后，驱动申请连续物理页的过程变得极其“丝滑”。因为没有异核后勤任务抢占 CPU2，内核能够一次性分配出 Order 4/5 的连续页给驱动，而不需要频繁拆解。这直接保住了你 M3 聚合 的底气。
+      - 2. 关键防御力：Movable Order 3 的“蓄水池” (27 -> 127)
+    定量对比： Movable 类型的 Order 3 块从 27 激增到了 127。
+    物理意义： 这正是你锁定的 M3 聚合 (3 MSDU) 能否维持的核心。
+    架构红利： 为什么现在多了这么多？因为 CPU3 专注做“后勤拼接”，它能不受中断干扰地将碎片拼成 Order 3。而在旧架构下，CPU3 处理中断时会不断打断拼接过程，导致 Order 3 还没生成就被拆散。这 127 个块就是你 20 小时压测不重启的“物理防火墙”。
+      - 3. “大块换小块”的消耗战：Order 10 的阴跌 (9 -> 7)
+    变化： Movable 类型的 Order 10 (4MB) 块从 9 减少到了 7。
+    解析： 你的速率下降和 CPU3 占用波动，正是因为系统在消耗大块资产。为了维持那 127 个 Order 3 块，内核拆掉了 2 个 4MB 的巨型块。
+    风险判定： 只要 Order 10 还有 7 个，你就完全不需要担心 OOM（内存溢出）。系统目前处于“有钱（大块）但在慢慢花”的阶段，远未到山穷水尽。
+      - 4. 速率波动真相：Reclaimable（可回收页）的活跃
+    数据： 第二组的 Reclaimable 在 Order 0-4 均有显著增加。
+    深度逻辑： 这说明 VFS/Inode 缓存变得活跃。由于 iperf3 在用户态运行，它产生的系统调用会触碰这些页。
+    结论： 速率下降是因为内核在处理这些 Reclaimable 页时，由于其分散在不同 Order，导致 TLB 寻址开销 变大。这证实了你的感知：速率没开始那么猛，但系统变稳了。
+    #### 终极定性判据：架构升级的胜利
+    - 旧架构崩溃原因： Unmovable 几乎全碎在 Order 0-2。当 IRQ25 绑在 CPU3 时，CPU3 在处理中断的瞬间如果需要申请 Order 3，会发现全是碎片，被迫触发 direct_reclaim，进而导致 Spinlock 死锁 和 Watchdog 重启。
+    - 新架构稳定原因： 你手动剥离了 CPU2，使得驱动申请 Unmovable 页时非常有秩序（保住了 Order 4/5）。同时 CPU3 能安心拼凑出 127 个 Movable Order 3。
+    目前的内存健康度评级：优（A-）。
 
-Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
-Node 0, zone   Normal           19           42            3            0
-```
-连续 Movable 4MB (order 10) 内存有12个， order 0 有347个， 表明回收顺畅，可用大块内存充足，系统适合长跑。
-长跑过程中，如有发现order 0不释放，内存又需要再分配(skb都是小包压在order 0-4)，可向其它order 5-9申请，除非order 5-9耗尽，
-但只要order 10仍有盈余，就能保证系统长跑时间，这是回收、再分配内存的闭环，需要syctl.conf对net.core / net.ipv4中对包管理的优化才能达到，
-默认内核系统给的值都是针对大内存GB以上的默认值，不适合GB以下MB的小内存。
+  ### 后期18小时的内存页分布
+  ```
+  cat /proc/pagetypeinfo
+  Page block order: 10
+  Pages per block:  1024
+  
+  Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+  Node    0, zone   Normal, type    Unmovable     50    113    193      7     19     24      5      1      0      0      1
+  Node    0, zone   Normal, type      Movable      6     17     14      8      0      2      0      1      1      1      5
+  Node    0, zone   Normal, type  Reclaimable     18     74     49     27     10      2      0      1      0      0      0
+  Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
+  
+  Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+  Node 0, zone   Normal           21           40            3            0
+  ```
+  - 物理内存的“枯竭临界点” (Order 4-6 Movable: 0)
+    - 定量警讯： Movable 区域的 Order 4, 6 已经彻底归零，Order 3 从之前的 33 暴跌至 8。
+    - 物理现状： 你的“战略储备”已经从大额钞票变成了零钱。目前系统手里只剩下 8 个 Order 3 块。
+      为何没崩？ 关键在于 Movable 的 Order 8, 9, 10 (1/1/5)。
+      系统目前全靠拆解这最后 5 个 Order 10 (4MB) 的巨型页来给驱动供血。一旦这 5 个大块被拆完，聚合度将发生断崖式下跌。
+  - Unmovable（不可移动区）的“逆势稳健”
+    - 观察点： 在全系统内存告急时，Unmovable 的 Order 4/5 (19/24) 依然极度健康。
+    - 深度解读： 这再次印证了你 CPU2 绑核 的神级效果。即使 Movable 区已经碎成了渣，驱动申请 DMA 关键内存的路径依然是隔离保护的。
+    - 系统生命线： 只要 Unmovable 不碎，网卡就不会丢包，链路就不会重置。这是你挺过 19 小时且 0 Drop 的物理基础。
 
-### 两次不同架构调优后跑到中期的内存分布对比
-
-#### BAD - *压力测试中期-9小时后: IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU3*
-
-```
-Page block order: 10
-Pages per block:  1024
-
-Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
-Node    0, zone   Normal, type    Unmovable    122    145     88     31      3      0      1      0      1      1      2
-Node    0, zone   Normal, type      Movable      5     13     14     27     16      8      4      3      0      0      9
-Node    0, zone   Normal, type  Reclaimable     17     39     35     11      0      0      0      0      0      1      0
-Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
-
-Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
-Node 0, zone   Normal           21           40            3            0
-```
-
-#### GOOD - 压力测试中期-11小时后: IRQ 24 MT7915e-hif on CPU2 & IRQ 25 MT7915e on CPU2
-```
-cat /proc/pagetypeinfo
-Page block order: 10
-Pages per block:  1024
-
-Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
-Node    0, zone   Normal, type    Unmovable     92    207    195     28     22     23      5      1      0      0      1
-Node    0, zone   Normal, type      Movable     54     23     15    127     50      1      0      0      0      1      7
-Node    0, zone   Normal, type  Reclaimable     39     76     49     27     10      2      0      1      0      0      0
-Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
-
-Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
-Node 0, zone   Normal           21           40            3            0
-```
-#### 第二组数据（当前状态）显示系统成功避开了“内存管理死锁”。以下是深度定量拆解：
-  - 1. 结构性胜出：Unmovable（不可移动页）的“中阶加固”
-旧架构 (IRQ25 on CPU3): Order 4-10 的 Unmovable 计数几乎为 0。这说明驱动在 CPU3 上频繁申请 DMA 描述符时，由于伴随中断竞争，物理页被极度细碎化。
-新架构 (IRQ25 on CPU2): Order 4-5 的 Unmovable 计数高达 22/23。
-技术结论： 这是一个巨大的进步！这意味着在 CPU2 独占生产后，驱动申请连续物理页的过程变得极其“丝滑”。因为没有异核后勤任务抢占 CPU2，内核能够一次性分配出 Order 4/5 的连续页给驱动，而不需要频繁拆解。这直接保住了你 M3 聚合 的底气。
-  - 2. 关键防御力：Movable Order 3 的“蓄水池” (27 -> 127)
-定量对比： Movable 类型的 Order 3 块从 27 激增到了 127。
-物理意义： 这正是你锁定的 M3 聚合 (3 MSDU) 能否维持的核心。
-架构红利： 为什么现在多了这么多？因为 CPU3 专注做“后勤拼接”，它能不受中断干扰地将碎片拼成 Order 3。而在旧架构下，CPU3 处理中断时会不断打断拼接过程，导致 Order 3 还没生成就被拆散。这 127 个块就是你 20 小时压测不重启的“物理防火墙”。
-  - 3. “大块换小块”的消耗战：Order 10 的阴跌 (9 -> 7)
-变化： Movable 类型的 Order 10 (4MB) 块从 9 减少到了 7。
-解析： 你的速率下降和 CPU3 占用波动，正是因为系统在消耗大块资产。为了维持那 127 个 Order 3 块，内核拆掉了 2 个 4MB 的巨型块。
-风险判定： 只要 Order 10 还有 7 个，你就完全不需要担心 OOM（内存溢出）。系统目前处于“有钱（大块）但在慢慢花”的阶段，远未到山穷水尽。
-  - 4. 速率波动真相：Reclaimable（可回收页）的活跃
-数据： 第二组的 Reclaimable 在 Order 0-4 均有显著增加。
-深度逻辑： 这说明 VFS/Inode 缓存变得活跃。由于 iperf3 在用户态运行，它产生的系统调用会触碰这些页。
-结论： 速率下降是因为内核在处理这些 Reclaimable 页时，由于其分散在不同 Order，导致 TLB 寻址开销 变大。这证实了你的感知：速率没开始那么猛，但系统变稳了。
-#### 终极定性判据：架构升级的胜利
-- 旧架构崩溃原因： Unmovable 几乎全碎在 Order 0-2。当 IRQ25 绑在 CPU3 时，CPU3 在处理中断的瞬间如果需要申请 Order 3，会发现全是碎片，被迫触发 direct_reclaim，进而导致 Spinlock 死锁 和 Watchdog 重启。
-- 新架构稳定原因： 你手动剥离了 CPU2，使得驱动申请 Unmovable 页时非常有秩序（保住了 Order 4/5）。同时 CPU3 能安心拼凑出 127 个 Movable Order 3。
-目前的内存健康度评级：优（A-）。
-
-### sysctl.conf 调优后跑到后期18小时的内存分布
-```
-cat /proc/pagetypeinfo
-Page block order: 10
-Pages per block:  1024
-
-Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
-Node    0, zone   Normal, type    Unmovable     50    113    193      7     19     24      5      1      0      0      1
-Node    0, zone   Normal, type      Movable      6     17     14      8      0      2      0      1      1      1      5
-Node    0, zone   Normal, type  Reclaimable     18     74     49     27     10      2      0      1      0      0      0
-Node    0, zone   Normal, type   HighAtomic      0      0      0      0      0      0      0      0      0      0      0
-
-Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
-Node 0, zone   Normal           21           40            3            0
-```
-- 物理内存的“枯竭临界点” (Order 4-6 Movable: 0)
-  - 定量警讯： Movable 区域的 Order 4, 6 已经彻底归零，Order 3 从之前的 33 暴跌至 8。
-  - 物理现状： 你的“战略储备”已经从大额钞票变成了零钱。目前系统手里只剩下 8 个 Order 3 块。
-    为何没崩？ 关键在于 Movable 的 Order 8, 9, 10 (1/1/5)。
-    系统目前全靠拆解这最后 5 个 Order 10 (4MB) 的巨型页来给驱动供血。一旦这 5 个大块被拆完，聚合度将发生断崖式下跌。
-- Unmovable（不可移动区）的“逆势稳健”
-  - 观察点： 在全系统内存告急时，Unmovable 的 Order 4/5 (19/24) 依然极度健康。
-  - 深度解读： 这再次印证了你 CPU2 绑核 的神级效果。即使 Movable 区已经碎成了渣，驱动申请 DMA 关键内存的路径依然是隔离保护的。
-  - 系统生命线： 只要 Unmovable 不碎，网卡就不会丢包，链路就不会重置。这是你挺过 19 小时且 0 Drop 的物理基础。
-
-### sysctl.conf 调优后跑到后期19小时的内存页分布
-```
-cat /proc/pagetypeinfo
-Page block order: 10
-Pages per block:  1024
-
-Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
-Node    0, zone   Normal, type    Unmovable     74    194    182     14      8     15      5      1      0      0      0
-Node    0, zone   Normal, type      Movable     43    167    235    160     69     51     15      9      4      5      3
-Node    0, zone   Normal, type  Reclaimable    219    178     92     47     25      9      1      1      0      0      0
-Node    0, zone   Normal, type   HighAtomic     11     13     18     27     14      5      0      0      0      0      0
-
-Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
-Node 0, zone   Normal           19           41            3            1
-```
-**在前18个小时的高压下，Movable 区域的“结构性重组” 对比之前的 pagetypeinfo，这组数据展现了惊人的变化：**
-- Order 3 (Movable) 激增： 从之前的 8 暴涨到 160。
-- Order 5-9 (Movable) 全线飘红： Order 9 从 1 涨到了 5，Order 8 从 1 涨到了 4。
-- 代价： Order 10 (Movable) 从 4 掉到了 3。
-- 物理结论：
-  **内核刚刚执行了一次极其高效的 Lumpy Reclaim (块状回收)。它牺牲了 1 个 4MB 的巨型块（Order 10），将其精准地粉碎并重新填补到了 Order 3-9 所有的中高阶空位中。这就是为什么你现在拥有了 75MB 空闲内存，且 M3 聚合度回升至 20.0% 的原因。**
-- 此时空闲内存: 75.04 MB （在前18个小时结束时，空闲内存一直被挤压在40~50MB或更低位一点)
-- SLAB 解熵效应：
-  内核判定这部分 Slab 页面已经过度碎片化且利用率低，强行回收了这些 Page 并归还给 Buddy System。这释放了大量的连续物理空间，直接促成了上面提到的 Movable 中高阶页面的大幅回升。
-```
- SLAB 关键内存池 (Active/Total)
-  skbuff_fclone_cache: 165/210        skbuff_head_cache : 1182/2562
-```
+  ### 后期19小时的内存页分布
+  ```
+  cat /proc/pagetypeinfo
+  Page block order: 10
+  Pages per block:  1024
+  
+  Free pages count per migrate type at order       0      1      2      3      4      5      6      7      8      9     10
+  Node    0, zone   Normal, type    Unmovable     74    194    182     14      8     15      5      1      0      0      0
+  Node    0, zone   Normal, type      Movable     43    167    235    160     69     51     15      9      4      5      3
+  Node    0, zone   Normal, type  Reclaimable    219    178     92     47     25      9      1      1      0      0      0
+  Node    0, zone   Normal, type   HighAtomic     11     13     18     27     14      5      0      0      0      0      0
+  
+  Number of blocks type     Unmovable      Movable  Reclaimable   HighAtomic
+  Node 0, zone   Normal           19           41            3            1
+  ```
+  **在前18个小时的高压下，Movable 区域的“结构性重组” 对比之前的 pagetypeinfo，这组数据展现了惊人的变化：**
+  - Order 3 (Movable) 激增： 从之前的 8 暴涨到 160。
+  - Order 5-9 (Movable) 全线飘红： Order 9 从 1 涨到了 5，Order 8 从 1 涨到了 4。
+  - 代价： Order 10 (Movable) 从 4 掉到了 3。
+  - 物理结论：
+    **内核刚刚执行了一次极其高效的 Lumpy Reclaim (块状回收)。它牺牲了 1 个 4MB 的巨型块（Order 10），将其精准地粉碎并重新填补到了 Order 3-9 所有的中高阶空位中。这就是为什么你现在拥有了 75MB 空闲内存，且 M3 聚合度回升至 20.0% 的原因。**
+  - 此时空闲内存: 75.04 MB （在前18个小时结束时，空闲内存一直被挤压在40~50MB或更低位一点)
+  - SLAB 解熵效应：
+    内核判定这部分 Slab 页面已经过度碎片化且利用率低，强行回收了这些 Page 并归还给 Buddy System。这释放了大量的连续物理空间，直接促成了上面提到的 Movable 中高阶页面的大幅回升。
+  ```
+   SLAB 关键内存池 (Active/Total)
+    skbuff_fclone_cache: 165/210        skbuff_head_cache : 1182/2562
+  ```
 
 ## MSDU聚合
   - ### 中后期近12小时状态
