@@ -485,6 +485,20 @@ iperf Done.
 最终Bandwidth定格在 279 Mbits/sec。相比初期的 300Mbps 均线，跌幅约 7%。
 [全部log下载](stress_test_20h.log)
 
+休息10分钟后，又做了一次iperf3 -R电脑端 60秒测试，基本正常，总体速率能接受, 多数在250M+， 最后10次记录：
+```
+[  4]  50.00-51.00  sec  26.9 MBytes   225 Mbits/sec
+[  4]  51.00-52.00  sec  31.5 MBytes   265 Mbits/sec
+[  4]  52.00-53.00  sec  34.3 MBytes   288 Mbits/sec
+[  4]  53.00-54.00  sec  34.5 MBytes   289 Mbits/sec
+[  4]  54.00-55.00  sec  33.5 MBytes   281 Mbits/sec
+[  4]  55.00-56.00  sec  26.6 MBytes   223 Mbits/sec
+[  4]  56.00-57.00  sec  28.9 MBytes   242 Mbits/sec
+[  4]  57.00-58.00  sec  33.8 MBytes   283 Mbits/sec
+[  4]  58.00-59.00  sec  34.7 MBytes   291 Mbits/sec
+[  4]  59.00-60.00  sec  34.5 MBytes   290 Mbits/sec
+```
+
 ## 路由端结束最终状态
   系统没有崩溃! 可用内存迅速回升至103MB, 各CPU核的占用率迅速下降到个位数(百分比)
 
