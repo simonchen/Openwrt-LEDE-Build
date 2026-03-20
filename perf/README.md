@@ -23,10 +23,10 @@ Windows 系统： 默认通常在 64 KB 左右，虽然 Windows 也有 Receive W
 </sub>
 
 ## 最终架构优化
-  - ### CPU2: mt7915e rx接收中断 - NAPI 调度
-  - ### CPU2: mt7915e-hif 处理 DMA 搬运 - 从环形缓冲区拿数据 
-  - ### CPU2: 驱动级绑定 mt76-tx 处理发送逻辑 - 包聚合发送给电脑端 或上级ap
-  - ### CPU0/1：napi-workq 进程
+  - ### CPU2: 绑定硬中断 mt7915e (5G) , mt7925e-hif (2.4G) 
+  - ### CPU2: 驱动级绑定 mt76-tx 发包聚合工作线程 (用HRTIMER)
+  - ### CPU3: 内核会自动将该 Timer 任务投递到与CPU2共享 L1 Cache 的最邻近空闲 VPE（即 CPU3）
+  - ### CPU0/1：绑定 NAPI POLL workq 进程
 
   - ### 为何不能将MT7915e rx硬中断绑定在CPU 3
     持续的MT7915e mac硬中断在CPU3上，会导致同样在CPU 3上的HRTIMER时钟停摆 （长期高压高熵下）
