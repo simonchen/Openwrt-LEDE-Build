@@ -26,7 +26,7 @@ Windows 系统： 默认通常在 64 KB 左右，虽然 Windows 也有 Receive W
   - ### CPU2: 绑定硬中断 mt7915e (5G) , mt7925e-hif (2.4G) 
   - ### CPU2: 驱动级绑定 mt76-tx 发包聚合工作线程 (用HRTIMER)
   - ### CPU3: 内核会自动将该 Timer 任务投递到与CPU2共享 L1 Cache 的最邻近空闲 VPE（即 CPU3）
-  - ### CPU0/1：绑定 NAPI POLL workq 进程
+  - ### CPU0/1/3：绑定 NAPI POLL workq 进程 （3核处理协议栈）
 
   - ### 为何不能将MT7915e rx硬中断绑定在CPU 3
     持续的MT7915e mac硬中断在CPU3上，会导致同样在CPU 3上的HRTIMER时钟停摆 （长期高压高熵下）
@@ -57,7 +57,7 @@ Windows 系统： 默认通常在 64 KB 左右，虽然 Windows 也有 Receive W
 
     *CPU3 做什么*
     - 物理投递： 为了平衡指令发射带宽，内核会**自动**将该 Timer 任务投递到与CPU2共享 L1 Cache 的最邻近空闲 VPE（即 CPU3）。这样既利用了 CPU3 的空闲发射槽位，又保证了 Timer 访问 skb 数据时依然能从共享的 L1 Cache 中直接命中，不需要走 OCP 总线。
-    - CPU 3 的 90% 高负载：主要是MT7621的GIC时钟高频调度切换产生的。 mt76-tx 是 “因”，CPU3 的 HRTIMER 爆发是 “果”。
+    - 兼顾NAPI Workq进程处于协议栈数据
 
 ## htop 深度指标分析：为何它们没排在最上面？
 <img src="https://github.com/simonchen/Openwrt-LEDE-Build/blob/main/perf/NAPI-poll-workers.png?raw=true" width="70%" height="70%">
