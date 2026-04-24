@@ -24,7 +24,7 @@ env:
   REPO_URL: https://github.com/simonchen/lede
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: .config.c-life-lite.20260306
+  CONFIG_FILE: .config.c-life-lite.20260424
   UPLOAD_BIN_DIR: false
   UPLOAD_FIRMWARE: true
   UPLOAD_COWTRANSFER: false
