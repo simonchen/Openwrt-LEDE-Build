@@ -20,7 +20,7 @@ on:
         default: 'false'
 
 env:
-  REPO_URL: https://github.com/simonchen/ede-R24.4.4-MTK
+  REPO_URL: https://github.com/simonchen/lede-R24.4.4-MTK
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config.c-life-mtk
