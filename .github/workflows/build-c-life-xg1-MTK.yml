@@ -21,7 +21,7 @@ on:
 
 env:
   REPO_URL: https://github.com/simonchen/lede-R24.4.4-MTK
-  REPO_BRANCH: master
+  REPO_BRANCH: main
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config.c-life-mtk
   UPLOAD_BIN_DIR: false
