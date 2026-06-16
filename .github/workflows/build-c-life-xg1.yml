@@ -25,6 +25,7 @@ env:
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config.c-life-lite.20260424
+  BANNER_FILE: banner-c-life-mt76-open-source
   UPLOAD_BIN_DIR: false
   UPLOAD_FIRMWARE: true
   UPLOAD_COWTRANSFER: false
@@ -79,6 +80,7 @@ jobs:
       run: |
         [ -e files ] && mv files openwrt/files
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        [ -e $BANNER_FILE ] && mv $BANNER_FILE openwrt/package/base-files/files/etc/banner-custom
         
     - name: SSH connection to Actions
       uses: P3TERX/ssh2actions@v1.0.0
